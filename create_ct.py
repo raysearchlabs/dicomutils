@@ -165,8 +165,8 @@ if __name__ == '__main__':
                         help='The patient position written in the images (default: not specified)')
     parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
                         help='The size of a single voxel in mm. (default: 1,2,4)')
-    parser.add_argument('--voxels', dest='Voxels', default="32,16,8",
-                        help='The number of voxels in the dataset. (default: 32,16,8)')
+    parser.add_argument('--voxels', dest='Voxels', default="64,32,16",
+                        help='The number of voxels in the dataset. (default: 64,32,16)')
     
 
     args = parser.parse_args()
@@ -179,7 +179,7 @@ if __name__ == '__main__':
     ctData += numpy.arange(nVoxels[0]).reshape((nVoxels[0],1,1))
     ctData += numpy.arange(nVoxels[1]).reshape((1,nVoxels[1],1))*10
     ctData += numpy.arange(nVoxels[2]).reshape((1,1,nVoxels[2]))*100
-    ctData -= 1000*(numpy.sqrt(x**2+y**2+z**2) < 50)
+    ctData -= 1000*(numpy.sqrt(x**2+y**2+z**2) < 30)
 
 
     write_ct(args.filenameBase, ctData, voxelGrid, PatientPosition = args.PatientPosition)
