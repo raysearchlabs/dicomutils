@@ -4,7 +4,8 @@
 import numpy, dicom, time, uuid, sys, datetime
 
 # Be careful to pass good fp numbers...
-dicom.config.allow_DS_float = True
+if hasattr(dicom, 'config'):
+    dicom.config.allow_DS_float = True
 
 def get_uid(name):
     return [k for k,v in dicom.UID.UID_dictionary.iteritems() if v[0] == name][0]
@@ -98,7 +99,7 @@ def get_default_ct_dataset(filename):
     # Type 1
     ds.Manufacturer = "pydicom"
     # Type 3
-    ds.ManufacturersModelName = "https://github.com/rickardraysearch/dicomutils"
+    ds.ManufacturersModelName = "https://github.com/raysearchlabs/dicomutils"
     ds.SoftwareVersions = "PyDICOM %s" % (dicom.__version__,)
 
     # General Image Module
@@ -122,45 +123,63 @@ def get_default_ct_dataset(filename):
     # ds.SliceLocation = 0
     return ds
     
-def write_ct(filenamebase, ctData, pixelGrid):
-    nPixels = ctData.shape
+def write_ct(filenamebase, ctData, voxelGrid, **kwargs):
+    nVoxels = ctData.shape
     ctbaseuid = generate_uid()
     FoRuid = generate_uid()
     studyuid = generate_uid()
     seriesuid = generate_uid()
-    for z in range(nPixels[2]):
+    for z in range(nVoxels[2]):
         filename = "%s-%i.dcm" % (filenamebase, z)
         ct = get_default_ct_dataset(filename)
         ct.SOPInstanceUID = "%s.%i" % (ctbaseuid, z)
         ct.SeriesInstanceUID = seriesuid
         ct.StudyInstanceUID = studyuid
         ct.FrameofReferenceUID = FoRuid
-        ct.Rows = nPixels[1]
-        ct.Columns = nPixels[0]
-        ct.PixelSpacing = [pixelGrid[1], pixelGrid[0]]
-        ct.SliceThickness = pixelGrid[2]
-        ct.ImagePositionPatient = [-(nPixels[0]-1)*pixelGrid[0]/2.0,
-                                   -(nPixels[1]-1)*pixelGrid[1]/2.0,
-                                   -(nPixels[2]-1)*pixelGrid[2]/2.0 + z*pixelGrid[2]]
+        ct.Rows = nVoxels[1]
+        ct.Columns = nVoxels[0]
+        ct.PixelSpacing = [voxelGrid[1], voxelGrid[0]]
+        ct.SliceThickness = voxelGrid[2]
+        ct.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
+                                   -(nVoxels[1]-1)*voxelGrid[1]/2.0,
+                                   -(nVoxels[2]-1)*voxelGrid[2]/2.0 + z*voxelGrid[2]]
         ct.PixelData=ctData[:,:,z].tostring(order='F')
+        for k, v in kwargs.iteritems():
+            if v != None:
+                setattr(ct, k, v)
         dicom.write_file(filename, ct)
 
-def get_centered_coordinates(pixelGrid, nPixels):
-    x,y,z=numpy.mgrid[:nPixels[0],:nPixels[1],:nPixels[2]]
-    x=(x-(nPixels[0]-1)/2.0)*pixelGrid[0]
-    y=(y-(nPixels[1]-1)/2.0)*pixelGrid[1]
-    z=(z-(nPixels[2]-1)/2.0)*pixelGrid[2]
+def get_centered_coordinates(voxelGrid, nVoxels):
+    x,y,z=numpy.mgrid[:nVoxels[0],:nVoxels[1],:nVoxels[2]]
+    x=(x-(nVoxels[0]-1)/2.0)*voxelGrid[0]
+    y=(y-(nVoxels[1]-1)/2.0)*voxelGrid[1]
+    z=(z-(nVoxels[2]-1)/2.0)*voxelGrid[2]
     return x,y,z
 
 if __name__ == '__main__':
-    pixelGrid = [2,4,1] # mm x y z
-    nPixels = [64,32,128]
-    x,y,z = get_centered_coordinates(pixelGrid, nPixels)
+    import argparse
+    parser = argparse.ArgumentParser(description='Create DICOM CT data.')
+    parser.add_argument('filenameBase', metavar='filename-base', 
+                        help='The base of the generated filenames. For example, specifying "foo" gives files called "foo-0.dcm", "foo-1.dcm" etc.') 
+    parser.add_argument('--patient-position', dest='PatientPosition', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDP'],
+                        help='The patient position written in the images (default: not specified)')
+    parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
+                        help='The size of a single voxel in mm. (default: 1,2,4)')
+    parser.add_argument('--voxels', dest='Voxels', default="32,16,8",
+                        help='The number of voxels in the dataset. (default: 32,16,8)')
     
-    ctData = numpy.ones(nPixels, dtype=numpy.int16)*1024
-    ctData += numpy.arange(nPixels[0]).reshape((nPixels[0],1,1))
-    ctData += numpy.arange(nPixels[1]).reshape((1,nPixels[1],1))*10
-    ctData += numpy.arange(nPixels[2]).reshape((1,1,nPixels[2]))*100
+
+    args = parser.parse_args()
+
+    voxelGrid = [float(x) for x in args.VoxelSize.split(",")]
+    nVoxels = [int(x) for x in args.Voxels.split(",")]
+    x,y,z = get_centered_coordinates(voxelGrid, nVoxels)
+    
+    ctData = numpy.ones(nVoxels, dtype=numpy.int16)*1024
+    ctData += numpy.arange(nVoxels[0]).reshape((nVoxels[0],1,1))
+    ctData += numpy.arange(nVoxels[1]).reshape((1,nVoxels[1],1))*10
+    ctData += numpy.arange(nVoxels[2]).reshape((1,1,nVoxels[2]))*100
     ctData -= 1000*(numpy.sqrt(x**2+y**2+z**2) < 50)
-    
-    write_ct(sys.argv[1], ctData, pixelGrid)
+
+
+    write_ct(args.filenameBase, ctData, voxelGrid, PatientPosition = args.PatientPosition)
