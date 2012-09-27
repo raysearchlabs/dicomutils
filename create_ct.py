@@ -135,14 +135,14 @@ def write_ct(filenamebase, ctData, pixelGrid):
         ct.SeriesInstanceUID = seriesuid
         ct.StudyInstanceUID = studyuid
         ct.FrameofReferenceUID = FoRuid
-        ct.Rows = nPixels[0]
-        ct.Columns = nPixels[1]
-        ct.PixelSpacing = [pixelGrid[0], pixelGrid[1]]
+        ct.Rows = nPixels[1]
+        ct.Columns = nPixels[0]
+        ct.PixelSpacing = [pixelGrid[1], pixelGrid[0]]
         ct.SliceThickness = pixelGrid[2]
         ct.ImagePositionPatient = [-(nPixels[0]-1)*pixelGrid[0]/2.0,
                                    -(nPixels[1]-1)*pixelGrid[1]/2.0,
                                    -(nPixels[2]-1)*pixelGrid[2]/2.0 + z*pixelGrid[2]]
-        ct.PixelData=ctData[:,:,z].tostring(order='C')
+        ct.PixelData=ctData[:,:,z].tostring(order='F')
         dicom.write_file(filename, ct)
 
 def get_centered_coordinates(pixelGrid, nPixels):
