@@ -30,8 +30,19 @@ def get_default_ct_dataset(filename):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     ds = get_empty_dataset(filename)
+    get_sop_commom_module(ds)
+    get_ct_image_module(ds)
+    get_image_pixel_macro(ds)
+    get_patient_module(ds)
+    get_general_study_module(ds)
+    get_general_series_module(ds)
+    get_frame_of_reference_module(ds)
+    get_general_equipment_module(ds)
+    get_general_image_module(ds)
+    get_image_plane_module(ds)
+    return ds
 
-    # SOP Commom Module
+def get_sop_commom_module(ds):
     # Type 1
     ds.SOPClassUID = get_uid("CT Image Storage")
     ds.SOPInstanceUID = ""
@@ -39,7 +50,7 @@ def get_default_ct_dataset(filename):
     ds.InstanceCreationDate = DT
     ds.InstanceCreationTime = TM
 
-    # CT Image Module
+def get_ct_image_module(ds):
     # Type 1
     ds.ImageType = "ORIGINAL\SECONDARY\AXIAL"
     ds.SamplesperPixel = 1
@@ -52,20 +63,21 @@ def get_default_ct_dataset(filename):
     # Type 2
     ds.KVP = ""
     ds.AcquisitionNumber = ""
-    # Image Pixel Macro
+
+def get_image_pixel_macro(ds):
     # Type 1
     ds.Rows = 256
     ds.Columns = 256
     ds.PixelRepresentation = 0
 
-    # Patient Module
+def get_patient_module(ds):
     # Type 2
     ds.PatientsName = ""
     ds.PatientID = "Patient's ID"
     ds.PatientsBirthDate = ""
     ds.PatientsSex = "O"
 
-    # General Study Module
+def get_general_study_module(ds):
     # Type 1
     ds.StudyInstanceUID = ""
     # Type 2
@@ -77,7 +89,7 @@ def get_default_ct_dataset(filename):
     # Type 3
     #ds.StudyDescription = ""
 
-    # General Series Module
+def get_general_series_module(ds):
     # Type 1
     ds.Modality = "CT"
     ds.SeriesInstanceUID = ""
@@ -89,20 +101,20 @@ def get_default_ct_dataset(filename):
     #ds.SeriesDescription = ""
     #ds.PatientPosition = "HFS"
 
-    # Frame of Reference Module
+def get_frame_of_reference_module(ds):
     # Type 1
     ds.FrameofReferenceUID = ""
     # Type 2
     ds.PositionReferenceIndicator = ""
 
-    # General Equipment Module
+def get_general_equipment_module(ds):
     # Type 1
     ds.Manufacturer = "pydicom"
     # Type 3
     ds.ManufacturersModelName = "https://github.com/raysearchlabs/dicomutils"
     ds.SoftwareVersions = "PyDICOM %s" % (dicom.__version__,)
 
-    # General Image Module
+def get_general_image_module(ds):
     # Type 2
     ds.InstanceNumber = ""
     # Type 3
@@ -111,7 +123,7 @@ def get_default_ct_dataset(filename):
     ds.ImagesinAcquisition = 1
     ds.DerivationDescription = "Generated from numpy"
 
-    # Image Plane Module
+def get_image_plane_module(ds):
     # Type 1
     ds.PixelSpacing = [1.0, 1.0]
     ds.ImageOrientationPatient = [1.0, 0.0, 0.0,
@@ -121,7 +133,6 @@ def get_default_ct_dataset(filename):
     ds.SliceThickness = 1.0
     # Type 3
     # ds.SliceLocation = 0
-    return ds
     
 def write_ct(filenamebase, ctData, voxelGrid, **kwargs):
     nVoxels = ctData.shape
