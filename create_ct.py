@@ -30,12 +30,12 @@ def get_default_ct_dataset(filename):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     ds = get_empty_dataset(filename, "CT Image Storage")
-    get_sop_common_module(ds, DT, TM)
+    get_sop_common_module(ds, DT, TM, "CT Image Storage")
     get_ct_image_module(ds)
     get_image_pixel_macro(ds)
     get_patient_module(ds)
     get_general_study_module(ds, DT, TM)
-    get_general_series_module(ds, DT, TM)
+    get_general_series_module(ds, DT, TM, "CT")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
     get_general_image_module(ds, DT, TM)
@@ -45,12 +45,12 @@ def get_default_ct_dataset(filename):
 def get_default_rt_dose_dataset(filename):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
-    ds = get_empty_dataset(filename, "RT Plan Storage")
-    get_sop_common_module(ds, DT, TM)
+    ds = get_empty_dataset(filename, "RT Dose Storage")
+    get_sop_common_module(ds, DT, TM, "RT Dose Storage")
     get_patient_module(ds)
     get_image_pixel_macro(ds)
     get_general_study_module(ds, DT, TM)
-    get_general_series_module(ds, DT, TM)
+    get_general_series_module(ds, DT, TM, "RTDOSE")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
     get_general_image_module(ds, DT, TM)
@@ -59,9 +59,9 @@ def get_default_rt_dose_dataset(filename):
     get_rt_dose_module(ds)
     return ds
     
-def get_sop_common_module(ds, DT, TM):
+def get_sop_common_module(ds, DT, TM, modality):
     # Type 1
-    ds.SOPClassUID = get_uid("CT Image Storage")
+    ds.SOPClassUID = get_uid(modality)
     ds.SOPInstanceUID = ""
     # Type 3
     ds.InstanceCreationDate = DT
@@ -106,17 +106,19 @@ def get_general_study_module(ds, DT, TM):
     # Type 3
     #ds.StudyDescription = ""
 
-def get_general_series_module(ds, DT, TM):
+def get_general_series_module(ds, DT, TM, modality):
     # Type 1
-    ds.Modality = "CT"
+    ds.Modality = modality
     ds.SeriesInstanceUID = ""
     # Type 2
     ds.SeriesNumber = ""
+    # Type 2C on Modality in ['CT', 'MR', 'Enhanced CT', 'Enhanced MR Image', 'Enhanced Color MR Image', 'MR Spectroscopy']. May not be present if Patient Orientation Code Sequence is present.
+    #ds.PatientPosition = "HFS"
+
     # Type 3
     ds.SeriesDate = DT
     ds.SeriesTime = TM
     #ds.SeriesDescription = ""
-    #ds.PatientPosition = "HFS"
 
 def get_frame_of_reference_module(ds):
     # Type 1
@@ -159,7 +161,7 @@ def get_multi_frame_module(ds):
 def get_rt_dose_module(ds):
     # Type 1C on PixelData
     ds.SamplesperPixel = 1
-    ds.ImageType = "ORIGINAL\SECONDARY\AXIAL"
+    ds.DoseGridScaling = 1.0
     ds.SamplesperPixel = 1
     ds.PhotometricInterpretation = "MONOCHROME2"
     ds.BitsAllocated = 16
@@ -209,8 +211,28 @@ def write_rt_dose(doseData, voxelGrid, **kwargs):
     FoRuid = generate_uid()
     studyuid = generate_uid()
     seriesuid = generate_uid()
+    sopinstanceuid = generate_uid()
     filename = "RD_%s.dcm" % (rtdoseuid,)
     rd = get_default_rt_dose_dataset(filename)
+    rd.SOPInstanceUID = sopinstanceuid
+    rd.SeriesInstanceUID = seriesuid
+    rd.StudyInstanceUID = studyuid
+    rd.FrameofReferenceUID = FoRuid
+    rd.Rows = nVoxels[1]
+    rd.Columns = nVoxels[0]
+    rd.NumberofFrames = nVoxels[2]
+    rd.PixelSpacing = [voxelGrid[1], voxelGrid[0]]
+    rd.SliceThickness = voxelGrid[2]
+    rd.GridFrameOffsetVector = [z*voxelGrid[2] for z in range(nVoxels[2])]
+    rd.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
+                               -(nVoxels[1]-1)*voxelGrid[1]/2.0,
+                               -(nVoxels[2]-1)*voxelGrid[2]/2.0]
+    
+    rd.PixelData=doseData.tostring(order='F')
+    for k, v in kwargs.iteritems():
+        if v != None:
+            setattr(ct, k, v)
+    dicom.write_file(filename, rd)
     
     
     
@@ -252,11 +274,13 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Create DICOM CT data.')
     parser.add_argument('--patient-position', dest='PatientPosition', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDP'],
-                        help='The patient position written in the images (default: not specified)')
+                        help='The patient position written in the images. Required for CT and MR. (default: not specified)')
     parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
                         help='The size of a single voxel in mm. (default: 1,2,4)')
     parser.add_argument('--voxels', dest='Voxels', default="64,32,16",
                         help='The number of voxels in the dataset. (default: 64,32,16)')
+    parser.add_argument('--modality', dest='modality', default="CT", choices = ['CT', "RTDOSE"],
+                        help='The modality to write. (default: CT)')
     
 
     args = parser.parse_args()
@@ -272,4 +296,9 @@ if __name__ == '__main__':
     ctData -= 1000*(numpy.sqrt(x**2+y**2+z**2) < 30)
 
 
-    write_ct(ctData, voxelGrid, PatientPosition = args.PatientPosition)
+    if args.modality == "CT":
+        if args.PatientPosition == None:
+            parser.error("Patient position must be specified when writing CT images!")
+        write_ct(ctData, voxelGrid, PatientPosition = args.PatientPosition)
+    elif args.modality == "RTDOSE":
+        write_rt_dose(ctData, voxelGrid, PatientPosition = args.PatientPosition)
