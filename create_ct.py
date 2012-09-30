@@ -50,7 +50,7 @@ def get_default_rt_dose_dataset(filename):
     get_patient_module(ds)
     get_image_pixel_macro(ds)
     get_general_study_module(ds, DT, TM)
-    get_general_series_module(ds, DT, TM, "RTDOSE")
+    get_rt_series_module(ds, DT, TM, "RTDOSE")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
     get_general_image_module(ds, DT, TM)
@@ -58,7 +58,26 @@ def get_default_rt_dose_dataset(filename):
     get_multi_frame_module(ds)
     get_rt_dose_module(ds)
     return ds
-    
+
+def get_default_rt_plan_dataset(filename):
+    DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
+    TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    ds = get_empty_dataset(filename, "RT Plan Storage")
+    get_sop_common_module(ds, DT, TM, "RT Plan Storage")
+    get_patient_module(ds)
+    get_general_study_module(ds, DT, TM)
+    get_rt_series_module(ds, DT, TM, "RTPLAN")
+    get_frame_of_reference_module(ds)
+    get_general_equipment_module(ds)
+    get_rt_general_plan_module(ds, DT, TM)
+    #get_rt_prescription_module(ds)
+    #get_rt_tolerance_tables(ds)
+    #get_rt_patient_setup_module(ds)
+    get_rt_beams_module(ds, 3, [10,40,10], [1,0.5,1])
+    get_rt_fraction_scheme_module(ds, 30)
+    #get_approval_module(ds)
+    return ds
+
 def get_sop_common_module(ds, DT, TM, modality):
     # Type 1
     ds.SOPClassUID = get_uid(modality)
@@ -119,6 +138,23 @@ def get_general_series_module(ds, DT, TM, modality):
     ds.SeriesDate = DT
     ds.SeriesTime = TM
     #ds.SeriesDescription = ""
+
+def get_rt_series_module(ds, DT, TM, modality):
+    # Type 1
+    ds.Modality = modality
+    ds.SeriesInstanceUID = ""
+    # Type 2
+    ds.SeriesNumber = ""
+    ds.OperatorsName = ""
+
+    # Type 3
+    ds.SeriesDate = DT
+    ds.SeriesTime = TM
+    # ds.SeriesDescriptionCodeSequence = None
+    # ds.ReferencedPerformedProcedureStepSequence = None
+    # ds.RequestAttributesSequence = None
+    # Performed Procedure Step Summary Macro...
+    # ds.SeriesDescription = ""
 
 def get_frame_of_reference_module(ds):
     # Type 1
@@ -205,6 +241,186 @@ def get_rt_dose_module(ds):
     # ds.NormalizationPoint = [0,0,0]
     # ds.TissueHeterogeneityCorrection = "IMAGE" # or "ROI_OVERRIDE" or "WATER"
 
+def get_rt_general_plan_module(ds, DT, TM, rtstructuid=None, rtdoseuid=None):
+    # Type 1
+    ds.RTPlanLabel = "Plan"
+    if rtstructuid == None:
+        ds.RTPlanGeometry = "TREATMENT_DEVICE"
+    else:
+        ds.RTPlanGeometry = "PATIENT"
+        ds.ReferencedStructureSetSequence = [dicom.dataset.Dataset()]
+        ds.ReferencedStructureSetSequence[0].ReferencedSOPClassUID = get_uid("RT Structure Set Storage")
+        ds.ReferencedStructureSetSequence[0].ReferencedSOPInstanceUID = rtstructuid
+    
+    # Type 2
+    ds.RTPlanDate = DT
+    ds.RTPlanTime = TM
+
+    # Type 3
+    ds.RTPlanName = "PlanName"
+    # ds.RTPlanDescription = ""
+    # ds.InstanceNumber = 1
+    # ds.TreatmentProtocols = ""
+    ds.PlanIntent = "RESEARCH"
+    # ds.TreatmentSties = ""
+    if rtdoseuid != None:
+        ds.ReferencedDoseSequence = [dicom.dataset.Dataset()]
+        ds.ReferencedDoseSequence[0].ReferencedSOPClassUID = get_uid("RT Dose Storage")
+        ds.ReferencedDoseSequence[0].ReferencedSOPInstanceUID = rtdoseuid
+    # ds.ReferencedRTPlanSequence = []
+
+    
+def get_rt_fraction_scheme_module(ds, nfractions):
+    ds.FractionGroupSequence = [dicom.dataset.Dataset()] # T1
+    fg = ds.FractionGroupSequence[0]
+    fg.FractionGroupNumber = 1 # T1
+    fg.FractionGroupDescription = "Primary fraction group" # T3
+    # fg.ReferencedDoseSequence = [] # T3
+    # fg.ReferencedDoseReferenceSequence = [] # T3
+    fg.NumberofFractionsPlanned = nfractions # T2
+    # fg.NumberofFractionPatternDigitsPerDay # T3
+    # fg.RepeatFractionCycleLength # T3
+    # fg.FractionPattern # T3
+    fg.NumberofBeams = len(ds.BeamSequence) # T1
+    if fg.NumberofBeams != 0:
+        fg.ReferencedBeamSequence = [dicom.dataset.Dataset() for i in range(fg.NumberofBeams)]
+        for i in range(fg.NumberofBeams):
+            refbeam = fg.ReferencedBeamSequence[i]
+            beam = ds.BeamSequence[i]
+            refbeam.ReferencedBeamNumber = beam.BeamNumber
+            # refbeam.BeamDoseSpecificationPoint = [0,0,0]  # T3
+            # refbeam.BeamDose = 10 # T3
+            # refbeam.BeamDosePointDepth  # T3
+            # refbeam.BeamDosePointEquivalentDepth # T3
+            # refbeam.BeamDosePointSSD # T3
+            refbeam.BeamMeterset = 100.0
+    fg.NumberofBrachyApplicationSetups = 0
+
+def cumsum(i):
+    """Yields len(i)+1 values from 0 to sum(i)"""
+    s = 0.0
+    yield s
+    for x in i:
+        s += x
+        yield s
+
+def get_rt_beams_module(ds, nbeams, nleaves, leafwidths):
+    """nleaves is a list [na, nb, nc, ...] and leafwidths is a list [wa, wb, wc, ...]
+    so that there are na leaves with width wa followed by nb leaves with width wb etc."""
+    ds.BeamSequence = [dicom.dataset.Dataset() for k in range(nbeams)]
+    for i in range(nbeams):
+        beam = ds.BeamSequence[i]
+        beam.BeamNumber = i + 1
+        beam.BeamName = "B{0}".format(i+1) # T3
+        # beam.BeamDescription # T3
+        beam.BeamType = "STATIC"
+        beam.RadiationType = "PHOTON"
+        # beam.PrimaryFluenceModeSequence = [] # T3
+        # beam.HighDoseTechniqueType = "NORMAL" # T1C
+        beam.TreatmentMachineName = "Linac" # T2
+        # beam.Manufacturer = "" # T3
+        # beam.InstitutionName # T3
+        # beam.InstitutionAddress # T3
+        # beam.InstitutionalDepartmentName # T3
+        # beam.ManufacturersModelName # T3
+        # beam.DeviceSerialNumber # T3
+        beam.PrimaryDosimeterUnit = "MU" # T3
+        # beam.ReferencedToleranceTableNumber # T3
+        beam.SourceAxisDistance = 1000 # mm, T3
+        beam.BeamLimitingDeviceSequence = [dicom.dataset.Dataset() for k in range(3)]
+        beam.BeamLimitingDeviceSequence[0].RTBeamLimitingDeviceType = "ASYMX"
+        #beam.BeamLimitingDeviceSequence[0].SourceToBeamLimitingDeviceDistance = 60 # T3
+        beam.BeamLimitingDeviceSequence[0].NumberOfLeafJawPairs = 1
+        beam.BeamLimitingDeviceSequence[1].RTBeamLimitingDeviceType = "ASYMY"
+        #beam.BeamLimitingDeviceSequence[1].SourceToBeamLimitingDeviceDistance = 50 # T3
+        beam.BeamLimitingDeviceSequence[1].NumberOfLeafJawPairs = 1
+        beam.BeamLimitingDeviceSequence[2].RTBeamLimitingDeviceType = "MLCX"
+        #beam.BeamLimitingDeviceSequence[2].SourceToBeamLimitingDeviceDistance = 40 # T3
+        beam.BeamLimitingDeviceSequence[2].NumberOfLeafJawPairs = sum(nleaves)
+        mlcsize = sum(n*w for n,w in zip(nleaves, leafwidths))
+        beam.BeamLimitingDeviceSequence[2].LeafPositionBoundaries = list(x - mlcsize/2 for x in cumsum(w for n,w in zip(nleaves, leafwidths) for k in range(n)))
+        # beam.ReferencedPatientSetupNumber = 0  # T3
+        # beam.ReferencedReferenceImageSequence = []  # T3
+        # beam.PlannedVerificationImageSequence = []  # T3
+        beam.TreatmentDeliveryType = "TREATMENT"
+        # beam.ReferencedDoseSequence = [] # T3
+        beam.NumberofWedges = 0
+        # beam.WedgeSequence = [] # T1C on NumberofWedges != 0
+        beam.NumberofCompensators = 0
+        beam.NumberofBoli = 0
+        beam.NumberofBlocks = 0
+        beam.FinalCumulativeMetersetWeight = 100
+        beam.NumberofControlPoints = 2
+        beam.ControlPointSequence = [dicom.dataset.Dataset() for k in range(2)]
+        for j in range(2):
+            cp = beam.ControlPointSequence[j]
+            cp.ControlPointIndex = j
+            cp.CumulativeMetersetWeight = j * beam.FinalCumulativeMetersetWeight / 1
+            # cp.ReferencedDoseReferenceSequence = [] # T3
+            # cp.ReferencedDoseSequence = [] # T1C on DoseSummationType == "CONTROL_POINT"
+            # cp.NominalBeamEnergy = 6 # T3
+            # cp.DoseRateSet = 100 # T3
+            # cp.WedgePositionSequence = [] # T3
+            if j == 0:
+                cp.BeamLimitingDevicePositionSequence = [dicom.dataset.Dataset() for k in range(3)]
+                cp.BeamLimitingDevicePositionSequence[0].RTBeamLimitingDeviceType = 'ASYMX'
+                cp.BeamLimitingDevicePositionSequence[0].LeafJawPositions = [0,0]
+                cp.BeamLimitingDevicePositionSequence[1].RTBeamLimitingDeviceType = 'ASYMY'
+                cp.BeamLimitingDevicePositionSequence[1].LeafJawPositions = [0,0]
+                cp.BeamLimitingDevicePositionSequence[2].RTBeamLimitingDeviceType = 'MLCX'
+                cp.BeamLimitingDevicePositionSequence[2].LeafJawPositions = [0,0]*sum(nleaves)
+                cp.GantryAngle = i * 360 / nbeams
+                cp.GantryRotationDirection = 'NONE'
+                # cp.GantryPitchAngle = 0 # T3
+                # cp.GantryPitchRotationDirection = "NONE" # T3
+                cp.BeamLimitingDeviceAngle = 0
+                cp.BeamLimitingDeviceRotationDirection = "NONE"
+                cp.PatientSupportAngle = 0
+                cp.PatientSupportRotationDirection = "NONE"
+                # cp.TableTopEccentricAxisDistance = 0 # T3
+                cp.TableTopEccentricAngle = 0
+                cp.TableTopEccentricRotationDirection = "NONE"
+                cp.TableTopPitchAngle = 0
+                cp.TableTopPitchRotationDirection = "NONE"
+                cp.TableTopRollAngle = 0
+                cp.TableTopRollRotationDirection = "NONE"
+                cp.TableTopVerticalPosition = ""
+                cp.TableTopLongitudinalPosition = ""
+                cp.TableTopLateralPosition = ""
+                cp.IsocenterPosition = [0,0,0]
+                # cp.SurfaceEntryPoint = [0,0,0] # T3
+                # cp.SourceToSurfaceDistance = 70 # T3
+                
+                
+                
+                
+                
+                
+            
+            
+        
+
+        
+        
+        
+
+def write_rt_plan(**kwargs):
+    FoRuid = generate_uid()
+    studyuid = generate_uid()
+    seriesuid = generate_uid()
+    sopinstanceuid = generate_uid()
+    filename = "RTPLAN_%s.dcm" % (sopinstanceuid,)
+    rp = get_default_rt_plan_dataset(filename)
+    rp.SOPInstanceUID = sopinstanceuid
+    rp.SeriesInstanceUID = seriesuid
+    rp.StudyInstanceUID = studyuid
+    rp.FrameofReferenceUID = FoRuid
+    for k, v in kwargs.iteritems():
+        if v != None:
+            setattr(ct, k, v)
+    dicom.write_file(filename, rp)
+        
+
 def write_rt_dose(doseData, voxelGrid, **kwargs):
     nVoxels = ctData.shape
     rtdoseuid = generate_uid()
@@ -212,7 +428,7 @@ def write_rt_dose(doseData, voxelGrid, **kwargs):
     studyuid = generate_uid()
     seriesuid = generate_uid()
     sopinstanceuid = generate_uid()
-    filename = "RD_%s.dcm" % (rtdoseuid,)
+    filename = "RTDOSE_%s.dcm" % (rtdoseuid,)
     rd = get_default_rt_dose_dataset(filename)
     rd.SOPInstanceUID = sopinstanceuid
     rd.SeriesInstanceUID = seriesuid
@@ -263,6 +479,7 @@ def write_ct(ctData, voxelGrid, **kwargs):
                 setattr(ct, k, v)
         dicom.write_file(filename, ct)
 
+
 def get_centered_coordinates(voxelGrid, nVoxels):
     x,y,z=numpy.mgrid[:nVoxels[0],:nVoxels[1],:nVoxels[2]]
     x=(x-(nVoxels[0]-1)/2.0)*voxelGrid[0]
@@ -279,7 +496,7 @@ if __name__ == '__main__':
                         help='The size of a single voxel in mm. (default: 1,2,4)')
     parser.add_argument('--voxels', dest='Voxels', default="64,32,16",
                         help='The number of voxels in the dataset. (default: 64,32,16)')
-    parser.add_argument('--modality', dest='modality', default="CT", choices = ['CT', "RTDOSE"],
+    parser.add_argument('--modality', dest='modality', default="CT", choices = ['CT', "RTDOSE", "RTPLAN"],
                         help='The modality to write. (default: CT)')
     
 
@@ -302,3 +519,5 @@ if __name__ == '__main__':
         write_ct(ctData, voxelGrid, PatientPosition = args.PatientPosition)
     elif args.modality == "RTDOSE":
         write_rt_dose(ctData, voxelGrid, PatientPosition = args.PatientPosition)
+    elif args.modality == "RTPLAN":
+        write_rt_plan(PatientPosition = args.PatientPosition)
