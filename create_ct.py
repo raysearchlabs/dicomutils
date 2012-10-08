@@ -1,7 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import numpy, dicom, time, uuid, sys, datetime
+import numpy as np
+import dicom, time, uuid, sys, datetime
 
 # Be careful to pass good fp numbers...
 if hasattr(dicom, 'config'):
@@ -42,7 +43,7 @@ def get_default_ct_dataset(filename):
     get_image_plane_module(ds)
     return ds
 
-def get_default_rt_dose_dataset(filename):
+def get_default_rt_dose_dataset(filename, current_study):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     ds = get_empty_dataset(filename, "RT Dose Storage")
@@ -56,10 +57,24 @@ def get_default_rt_dose_dataset(filename):
     get_general_image_module(ds, DT, TM)
     get_image_plane_module(ds)
     get_multi_frame_module(ds)
-    get_rt_dose_module(ds)
+    get_rt_dose_module(ds, current_study)
     return ds
 
-def get_default_rt_plan_dataset(filename):
+def get_default_rt_structure_set_dataset(filename, current_study):
+    DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
+    TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    ds = get_empty_dataset(filename, "RT Structure Set Storage")
+    get_sop_common_module(ds, DT, TM, "RT Structure Set Storage")
+    get_patient_module(ds)
+    get_general_study_module(ds, DT, TM)
+    get_rt_series_module(ds, DT, TM, "RTSTRUCT")
+    get_general_equipment_module(ds)
+    get_structure_set_module(ds, DT, TM, current_study)
+    get_roi_contour_module(ds)
+    get_rt_roi_observations_module(ds)
+    return ds
+
+def get_default_rt_plan_dataset(filename, current_study):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     ds = get_empty_dataset(filename, "RT Plan Storage")
@@ -69,7 +84,7 @@ def get_default_rt_plan_dataset(filename):
     get_rt_series_module(ds, DT, TM, "RTPLAN")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
-    get_rt_general_plan_module(ds, DT, TM)
+    get_rt_general_plan_module(ds, DT, TM, current_study)
     #get_rt_prescription_module(ds)
     #get_rt_tolerance_tables(ds)
     #get_rt_patient_setup_module(ds)
@@ -194,7 +209,7 @@ def get_multi_frame_module(ds):
     ds.NumberofFrames = 1
     ds.FrameIncrementPointer = dicom.datadict.Tag(dicom.datadict.tag_for_name("GridFrameOffsetVector"))
 
-def get_rt_dose_module(ds):
+def get_rt_dose_module(ds, current_study):
     # Type 1C on PixelData
     ds.SamplesperPixel = 1
     ds.DoseGridScaling = 1.0
@@ -211,9 +226,12 @@ def get_rt_dose_module(ds):
     ds.DoseSummationType = "PLAN"
 
     # Type 1C if Dose Summation Type is any of the enumerated values. 
-    ds.ReferencedRTPlanSequence = [dicom.dataset.Dataset()]
-    ds.ReferencedRTPlanSequence[0].ReferencedSOPClassUID = get_uid("RT Plan Storage")
-    ds.ReferencedRTPlanSequence[0].ReferencedSOPInstanceUID = generate_uid()
+    ds.ReferencedRTPlanSequence = []
+    if 'RTPLAN' in current_study:
+        refplan = dicom.dataset.Dataset()
+        refplan.ReferencedSOPClassUID = get_uid("RT Plan Storage")
+        refplan.ReferencedSOPInstanceUID = current_study['RTPLAN'].SOPInstanceUID
+        ds.ReferencedRTPlanSequence.append(refplan)
 
     # Type 1C on multi-frame
     ds.GridFrameOffsetVector = [0,1,2,3,4]
@@ -241,16 +259,16 @@ def get_rt_dose_module(ds):
     # ds.NormalizationPoint = [0,0,0]
     # ds.TissueHeterogeneityCorrection = "IMAGE" # or "ROI_OVERRIDE" or "WATER"
 
-def get_rt_general_plan_module(ds, DT, TM, rtstructuid=None, rtdoseuid=None):
+def get_rt_general_plan_module(ds, DT, TM, current_study):
     # Type 1
     ds.RTPlanLabel = "Plan"
-    if rtstructuid == None:
+    if 'RTSTRUCT' not in current_study:
         ds.RTPlanGeometry = "TREATMENT_DEVICE"
     else:
         ds.RTPlanGeometry = "PATIENT"
         ds.ReferencedStructureSetSequence = [dicom.dataset.Dataset()]
         ds.ReferencedStructureSetSequence[0].ReferencedSOPClassUID = get_uid("RT Structure Set Storage")
-        ds.ReferencedStructureSetSequence[0].ReferencedSOPInstanceUID = rtstructuid
+        ds.ReferencedStructureSetSequence[0].ReferencedSOPInstanceUID = current_study['RTSTRUCT'].SOPInstanceUID
     
     # Type 2
     ds.RTPlanDate = DT
@@ -263,10 +281,10 @@ def get_rt_general_plan_module(ds, DT, TM, rtstructuid=None, rtdoseuid=None):
     # ds.TreatmentProtocols = ""
     ds.PlanIntent = "RESEARCH"
     # ds.TreatmentSties = ""
-    if rtdoseuid != None:
+    if 'RTDOSE' in current_study:
         ds.ReferencedDoseSequence = [dicom.dataset.Dataset()]
         ds.ReferencedDoseSequence[0].ReferencedSOPClassUID = get_uid("RT Dose Storage")
-        ds.ReferencedDoseSequence[0].ReferencedSOPInstanceUID = rtdoseuid
+        ds.ReferencedDoseSequence[0].ReferencedSOPInstanceUID = current_study['RTDOSE'].SOPInstanceUID
     # ds.ReferencedRTPlanSequence = []
 
     
@@ -390,46 +408,116 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths):
                 cp.IsocenterPosition = [0,0,0]
                 # cp.SurfaceEntryPoint = [0,0,0] # T3
                 # cp.SourceToSurfaceDistance = 70 # T3
-                
-                
-                
-                
-                
-                
-            
-            
-        
 
-        
-        
-        
+def get_structure_set_module(ds, DT, TM, current_study):
+    ds.StructureSetLabel = "Structure Set" # T1
+    # ds.StructureSetName = "" # T3
+    # ds.StructureSetDescription = "" # T3
+    # ds.InstanceNumber = "" # T3
+    ds.StructureSetDate = DT # T2
+    ds.StructureSetTime = TM # T2
+    # ds.ReferencedFrameofReferenceSequence = [dicom.dataset.Dataset()] # T3
+    # reffor = ds.ReferencedFrameofReferenceSequence[0]
+    # reffor.FrameofReferenceUID = get_current_study_uid('FrameofReferenceUID', current_study)
+    # reffor.RelatedFrameofReferenceUID = [] # T3
+    # reffor.RTReferencedStudyUID = [] # T3, might be TODO necessary for IHE-RO
+    # TODO: ImageSOPInstanceReferenceMacro
+    ds.StructureSetROISequence = []
 
-def write_rt_plan(**kwargs):
-    FoRuid = generate_uid()
-    studyuid = generate_uid()
+    return ds
+
+def add_roi_to_structure_set(ds, ROIName, current_study):
+    newroi = dicom.dataset.Dataset()
+    roinumber = max([0] + [roi.ROINumber for roi in ds.StructureSetROISequence]) + 1
+    newroi.ROIName = ROIName
+    newroi.ReferencedFrameofReferenceUID = get_current_study_uid('FrameofReferenceUID', current_study)
+    newroi.ROINumber = roinumber
+    newroi.ROIGenerationAlgorithm = "SEMIAUTOMATIC"
+    ds.StructureSetROISequence.append(newroi)
+    return newroi
+
+def get_roi_contour_module(ds):
+    ds.ROIContourSequence = []
+    return ds
+
+def add_roi_to_roi_contour(ds, roi, contours, current_study):
+    newroi = dicom.dataset.Dataset()
+    ds.ROIContourSequence.append(newroi)
+    newroi.ReferencedROINumber = roi.ROINumber
+    newroi.ContourSequence = []
+    for i, contour in enumerate(contours, 1):
+        c = dicom.dataset.Dataset()
+        newroi.ContourSequence.append(c)
+        c.ContourNumber = i
+        c.ContourGeometricType = 'CLOSED_PLANAR'
+        # c.AttachedContours = [] # T3
+        if 'CT' in current_study:
+            c.ContourImageSequence = [] # T3
+            for image in current_study['CT']:
+                if image.ImagePositionPatient[2] == contour[0,2]:
+                    imgref = dicom.dataset.Dataset()
+                    imgref.ReferencedSOPInstanceUID = image.SOPInstanceUID
+                    imgref.ReferencedSOPClassUID = image.SOPClassUID
+                    # imgref.ReferencedFrameNumber = "" # T1C on multiframe
+                    # imgref.ReferencedSegmentNumber = "" # T1C on segmentation
+                    c.ContourImageSequence.append(imgref)
+        # c.ContourSlabThickness = "" # T3
+        # c.ContourOffsetVector = [0,0,0] # T3
+        c.NumberofContourPoints = len(contour)
+        c.ContourData = "\\".join(["%g" % x for x in contour.ravel().tolist()])
+    return newroi
+
+def get_rt_roi_observations_module(ds):
+    ds.RTROIObservationsSequence = []
+    return ds
+
+def add_roi_to_rt_roi_observation(ds, roi, label, interpreted_type):
+    roiobs = dicom.dataset.Dataset()
+    ds.RTROIObservationsSequence.append(roiobs)
+    roiobs.ObservationNumber = roi.ROINumber
+    roiobs.ReferencedROINumber = roi.ROINumber
+    roiobs.ROIObservationLabel = label # T3
+    # roiobs.ROIObservationDescription = "" # T3
+    # roiobs.RTRelatedROISequence = [] # T3
+    # roiobs.RelatedRTROIObservationsSequence = [] # T3
+    roiobs.RTROIInterpretedType = interpreted_type # T3
+    roiobs.ROIInterpreter = "" # T2
+    # roiobs.MaterialID = "" # T3
+    # roiobs.ROIPhysicalPropertiesSequence = [] # T3
+    return roiobs
+    
+def get_current_study_uid(prop, current_study):
+    if prop not in current_study:
+        current_study[prop] = generate_uid()
+    return current_study[prop]
+
+
+def build_rt_plan(current_study, **kwargs):
+    FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
+    studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
     sopinstanceuid = generate_uid()
     filename = "RTPLAN_%s.dcm" % (sopinstanceuid,)
-    rp = get_default_rt_plan_dataset(filename)
+    rp = get_default_rt_plan_dataset(filename, current_study)
     rp.SOPInstanceUID = sopinstanceuid
     rp.SeriesInstanceUID = seriesuid
     rp.StudyInstanceUID = studyuid
     rp.FrameofReferenceUID = FoRuid
     for k, v in kwargs.iteritems():
         if v != None:
-            setattr(ct, k, v)
-    dicom.write_file(filename, rp)
+            setattr(rp, k, v)
+    return rp
         
 
-def write_rt_dose(doseData, voxelGrid, **kwargs):
-    nVoxels = ctData.shape
+def build_rt_dose(doseData, voxelGrid, current_study, **kwargs):
+    nVoxels = doseData.shape
     rtdoseuid = generate_uid()
-    FoRuid = generate_uid()
-    studyuid = generate_uid()
+    FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
+    studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
     sopinstanceuid = generate_uid()
     filename = "RTDOSE_%s.dcm" % (rtdoseuid,)
-    rd = get_default_rt_dose_dataset(filename)
+    rd = get_default_rt_dose_dataset(filename, current_study)
     rd.SOPInstanceUID = sopinstanceuid
     rd.SeriesInstanceUID = seriesuid
     rd.StudyInstanceUID = studyuid
@@ -447,17 +535,50 @@ def write_rt_dose(doseData, voxelGrid, **kwargs):
     rd.PixelData=doseData.tostring(order='F')
     for k, v in kwargs.iteritems():
         if v != None:
-            setattr(ct, k, v)
-    dicom.write_file(filename, rd)
+            setattr(rd, k, v)
+    return rd
+
+    
+def build_rt_structure_set(rois, current_study, **kwargs):
+    rtstructuid = generate_uid()
+    FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
+    studyuid = get_current_study_uid('StudyUID', current_study)
+    seriesuid = generate_uid()
+    sopinstanceuid = generate_uid()
+    filename = "RTSTRUCT_%s.dcm" % (rtstructuid,)
+    rs = get_default_rt_structure_set_dataset(filename, current_study)
+    for roi in rois:
+        structuresetroi = add_roi_to_structure_set(rs, roi['Name'], current_study)
+        add_roi_to_roi_contour(rs, structuresetroi, roi['Contours'], current_study)
+        add_roi_to_rt_roi_observation(rs, structuresetroi, roi['Name'], roi['InterpretedType'])
+    rs.SOPInstanceUID = sopinstanceuid
+    rs.SeriesInstanceUID = seriesuid
+    rs.StudyInstanceUID = studyuid
+    rs.FrameofReferenceUID = FoRuid
+    rs.Rows = nVoxels[1]
+    rs.Columns = nVoxels[0]
+    rs.NumberofFrames = nVoxels[2]
+    rs.PixelSpacing = [voxelGrid[1], voxelGrid[0]]
+    rs.SliceThickness = voxelGrid[2]
+    rs.GridFrameOffsetVector = [z*voxelGrid[2] for z in range(nVoxels[2])]
+    rs.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
+                               -(nVoxels[1]-1)*voxelGrid[1]/2.0,
+                               -(nVoxels[2]-1)*voxelGrid[2]/2.0]
+    
+    for k, v in kwargs.iteritems():
+        if v != None:
+            setattr(rs, k, v)
+    return rs
+
     
     
-    
-def write_ct(ctData, voxelGrid, **kwargs):
+def build_ct(ctData, voxelGrid, current_study, **kwargs):
     nVoxels = ctData.shape
     ctbaseuid = generate_uid()
-    FoRuid = generate_uid()
-    studyuid = generate_uid()
+    FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
+    studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
+    cts=[]
     for z in range(nVoxels[2]):
         sopinstanceuid = "%s.%i" % (ctbaseuid, z)
         filename = "CT_%s.dcm" % (sopinstanceuid,)
@@ -477,11 +598,11 @@ def write_ct(ctData, voxelGrid, **kwargs):
         for k, v in kwargs.iteritems():
             if v != None:
                 setattr(ct, k, v)
-        dicom.write_file(filename, ct)
-
+        cts.append(ct)
+    return cts
 
 def get_centered_coordinates(voxelGrid, nVoxels):
-    x,y,z=numpy.mgrid[:nVoxels[0],:nVoxels[1],:nVoxels[2]]
+    x,y,z=np.mgrid[:nVoxels[0],:nVoxels[1],:nVoxels[2]]
     x=(x-(nVoxels[0]-1)/2.0)*voxelGrid[0]
     y=(y-(nVoxels[1]-1)/2.0)*voxelGrid[1]
     z=(z-(nVoxels[2]-1)/2.0)*voxelGrid[2]
@@ -489,6 +610,16 @@ def get_centered_coordinates(voxelGrid, nVoxels):
 
 if __name__ == '__main__':
     import argparse
+    class ModalityGroupAction(argparse.Action):
+        def __call__(self, parser, namespace, values, option_string=None):
+            ns = namespace.__dict__.copy()
+            ns.pop('studies')
+            ns['modality'] = values
+            namespace.studies[-1].append(argparse.Namespace(**ns))
+    class NewStudyAction(argparse.Action):
+        def __call__(self, parser, namespace, values, option_string=None):
+            namespace.studies.append([])
+
     parser = argparse.ArgumentParser(description='Create DICOM CT data.')
     parser.add_argument('--patient-position', dest='PatientPosition', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDP'],
                         help='The patient position written in the images. Required for CT and MR. (default: not specified)')
@@ -496,28 +627,51 @@ if __name__ == '__main__':
                         help='The size of a single voxel in mm. (default: 1,2,4)')
     parser.add_argument('--voxels', dest='Voxels', default="64,32,16",
                         help='The number of voxels in the dataset. (default: 64,32,16)')
-    parser.add_argument('--modality', dest='modality', default="CT", choices = ['CT', "RTDOSE", "RTPLAN"],
-                        help='The modality to write. (default: CT)')
+    parser.add_argument('--modality', dest='modality', default=[], choices = ['CT', "RTDOSE", "RTPLAN", "RTSTRUCT"],
+                        help='The modality to write. (default: CT)', action=ModalityGroupAction)
     
-
-    args = parser.parse_args()
+    args = parser.parse_args(namespace = argparse.Namespace(studies=[[]]))
 
     voxelGrid = [float(x) for x in args.VoxelSize.split(",")]
     nVoxels = [int(x) for x in args.Voxels.split(",")]
     x,y,z = get_centered_coordinates(voxelGrid, nVoxels)
     
-    ctData = numpy.ones(nVoxels, dtype=numpy.int16)*1024
-    ctData += numpy.arange(nVoxels[0]).reshape((nVoxels[0],1,1))
-    ctData += numpy.arange(nVoxels[1]).reshape((1,nVoxels[1],1))*10
-    ctData += numpy.arange(nVoxels[2]).reshape((1,1,nVoxels[2]))*100
-    ctData -= 1000*(numpy.sqrt(x**2+y**2+z**2) < 30)
+    ctData = np.ones(nVoxels, dtype=np.int16)*1024
+    ctData += np.arange(nVoxels[0]).reshape((nVoxels[0],1,1))
+    ctData += np.arange(nVoxels[1]).reshape((1,nVoxels[1],1))*10
+    ctData += np.arange(nVoxels[2]).reshape((1,1,nVoxels[2]))*100
+    ctData -= 1000*(np.sqrt(x**2+y**2+z**2) < 30)
 
+    radius = 30.0
+    structs = [{'Name': 'Sphere',
+                'InterpretedType': 'GTV',
+                'Contours': np.array([[[np.sqrt(radius**2 - Z**2) * np.cos(theta), np.sqrt(radius**2 - Z**2) * np.sin(theta), Z] for theta in np.linspace(0, 2*np.pi, 10)] for Z in z[0,0,np.abs(z[0,0,:]) < radius]])},
+               {'Name': 'Box',
+                'InterpretedType': 'PTV',
+                'Contours': np.array([[[X*radius,Y*X*radius,Z] for X in [-1,1] for Y in [-1,1]] for Z in z[0,0,np.abs(z[0,0,:]) < radius]])},
+               {'Name': 'External',
+                'InterpretedType': 'EXTERNAL',
+                'Contours': np.array([[[X*voxelGrid[0]*nVoxels[0]/2.0,Y*X*voxelGrid[1]*nVoxels[1]/2.0,Z] for X in [-1,1] for Y in [-1,1]] for Z in z[0,0,np.abs(z[0,0,:]) < voxelGrid[2]*nVoxels[2]/2.0]])}]
 
-    if args.modality == "CT":
-        if args.PatientPosition == None:
-            parser.error("Patient position must be specified when writing CT images!")
-        write_ct(ctData, voxelGrid, PatientPosition = args.PatientPosition)
-    elif args.modality == "RTDOSE":
-        write_rt_dose(ctData, voxelGrid, PatientPosition = args.PatientPosition)
-    elif args.modality == "RTPLAN":
-        write_rt_plan(PatientPosition = args.PatientPosition)
+    for study in args.studies:
+        current_study = {}
+        for study in study:
+            if study.modality == "CT":
+                if study.PatientPosition == None:
+                    parser.error("Patient position must be specified when writing CT images!")
+                datasets = build_ct(ctData, voxelGrid, PatientPosition = study.PatientPosition, current_study = current_study)
+                current_study['CT'] = datasets
+                for ds in datasets:
+                    dicom.write_file(ds.filename, ds)
+            elif study.modality == "RTDOSE":
+                rd = build_rt_dose(ctData, voxelGrid, PatientPosition = study.PatientPosition, current_study = current_study)
+                current_study['RTDOSE'] = rd
+                dicom.write_file(rd.filename, rd)
+            elif study.modality == "RTPLAN":
+                rp = build_rt_plan(PatientPosition = study.PatientPosition, current_study = current_study)
+                current_study['RTPLAN'] = rp
+                dicom.write_file(rp.filename, rp)
+            elif study.modality == "RTSTRUCT":
+                rs = build_rt_structure_set(structs, PatientPosition = study.PatientPosition, current_study = current_study)
+                current_study['RTSTRUCT'] = rs
+                dicom.write_file(rs.filename, rs)
