@@ -416,12 +416,25 @@ def get_structure_set_module(ds, DT, TM, current_study):
     # ds.InstanceNumber = "" # T3
     ds.StructureSetDate = DT # T2
     ds.StructureSetTime = TM # T2
-    # ds.ReferencedFrameofReferenceSequence = [dicom.dataset.Dataset()] # T3
-    # reffor = ds.ReferencedFrameofReferenceSequence[0]
-    # reffor.FrameofReferenceUID = get_current_study_uid('FrameofReferenceUID', current_study)
-    # reffor.RelatedFrameofReferenceUID = [] # T3
-    # reffor.RTReferencedStudyUID = [] # T3, might be TODO necessary for IHE-RO
-    # TODO: ImageSOPInstanceReferenceMacro
+    if 'CT' in current_study and len(current_study['CT']) > 0:
+        reffor = dicom.dataset.Dataset()
+        reffor.FrameofReferenceUID = get_current_study_uid('FrameofReferenceUID', current_study)
+        reffor.RelatedFrameofReferenceUID = [] # T3
+        refstudy = dicom.dataset.Dataset()
+        refstudy.RTReferencedStudyUID = get_current_study_uid('StudyUID', current_study) # T3
+        refseries = dicom.dataset.Dataset()
+        refseries.SeriesInstanceUID = current_study['CT'][0].SeriesInstanceUID
+        refseries.ContourImageSequence = [] # T3
+        for image in current_study['CT']:
+            imgref = dicom.dataset.Dataset()
+            imgref.ReferencedSOPInstanceUID = image.SOPInstanceUID
+            imgref.ReferencedSOPClassUID = image.SOPClassUID
+            # imgref.ReferencedFrameNumber = "" # T1C on multiframe
+            # imgref.ReferencedSegmentNumber = "" # T1C on segmentation
+            refseries.ContourImageSequence.append(imgref)
+        refstudy.RTReferencedSeriesSequence = [refseries]
+        reffor.RTReferencedStudySequence = [refstudy]
+        ds.ReferencedFrameOfReferenceSequence = [reffor] # T3
     ds.StructureSetROISequence = []
 
     return ds
@@ -645,7 +658,7 @@ if __name__ == '__main__':
     radius = 30.0
     structs = [{'Name': 'Sphere',
                 'InterpretedType': 'GTV',
-                'Contours': np.array([[[np.sqrt(radius**2 - Z**2) * np.cos(theta), np.sqrt(radius**2 - Z**2) * np.sin(theta), Z] for theta in np.linspace(0, 2*np.pi, 10)] for Z in z[0,0,np.abs(z[0,0,:]) < radius]])},
+                'Contours': np.array([[[np.sqrt(radius**2 - Z**2) * np.cos(theta), np.sqrt(radius**2 - Z**2) * np.sin(theta), Z] for theta in np.linspace(0, 2*np.pi, 33)[:-1]] for Z in z[0,0,np.abs(z[0,0,:]) < radius]])},
                {'Name': 'Box',
                 'InterpretedType': 'PTV',
                 'Contours': np.array([[[X*radius,Y*X*radius,Z] for X in [-1,1] for Y in [-1,1]] for Z in z[0,0,np.abs(z[0,0,:]) < radius]])},
