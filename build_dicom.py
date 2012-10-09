@@ -649,7 +649,7 @@ if __name__ == '__main__':
         def __call__(self, parser, namespace, values, option_string=None):
             namespace.studies.append([])
 
-    parser = argparse.ArgumentParser(description='Create DICOM CT data.')
+    parser = argparse.ArgumentParser(description='Create DICOM data.')
     parser.add_argument('--patient-position', dest='patient_position', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDP'],
                         help='The patient position written in the images. Required for CT and MR. (default: not specified)')
     parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
