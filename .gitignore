@@ -25,3 +25,9 @@ pip-log.txt
 
 #Mr Developer
 .mr.developer.cfg
+
+# Run results
+*.dcm
+
+# Emacs temp files
+*~
