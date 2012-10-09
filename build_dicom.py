@@ -420,6 +420,62 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, current_study):
                 # cp.SurfaceEntryPoint = [0,0,0] # T3
                 # cp.SourceToSurfaceDistance = 70 # T3
 
+
+def nmin(it):
+    n = None
+    for i in it:
+        if n == None or i < n:
+            n = i
+    return n
+
+def nmax(it):
+    n = None
+    for i in it:
+        if n == None or i > n:
+            n = i
+    return n
+
+from collections import defaultdict
+def getblds(blds):
+    d = defaultdict(lambda: None)
+    for bld in blds:
+        if hasattr(bld, 'RTBeamLimitingDeviceType'):
+            d[bld.RTBeamLimitingDeviceType] = bld
+    return d
+
+from decimal import Decimal
+
+def conform_jaws_to_mlc(beam):
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+    for cp in beam.ControlPointSequence:
+        opentolerance = Decimal("0.5") # mm
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+
+            if bldp['MLCX'] != None and bldp['ASYMY'] != None:
+                min_open_leafi = nmin(i for i in range(len(bldp['MLCX'].LeafJawPositions)/2) if bldp['MLCX'].LeafJawPositions[i] >= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                max_open_leafi = nmax(i for i in range(len(bldp['MLCX'].LeafJawPositions)/2) if bldp['MLCX'].LeafJawPositions[i] >= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                if min_open_leafi != None and max_open_leafi != None:
+                    bldp['ASYMY'].LeafJawPositions = [bld['MLCX'].LeafPositionBoundaries[min_open_leafi],
+                                                      bld['MLCX'].LeafPositionBoundaries[max_open_leafi + 1]]
+            if bldp['MLCX'] != None and bldp['ASYMY'] != None:
+                min_open_leaf = min(bldp['MLCX'].LeafJawPositions[i] for i in range(len(bldp['MLCX'].LeafJawPositions)/2) if bldp['MLCX'].LeafJawPositions[i] >= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                max_open_leaf = max(bldp['MLCX'].LeafJawPositions[i] for i in range(len(bldp['MLCX'].LeafJawPositions)/2) if bldp['MLCX'].LeafJawPositions[i] >= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                bldp['ASYMX'].LeafJawPositions = [min_open_leaf, max_open_leaf]
+
+def conform_mlc_to_circle(beam, radius, center):
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+    for cp in beam.ControlPointSequence:
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+            for i in range(nleaves):
+                y = (bld['MLCX'].LeafPositionBoundaries[i] + bld['MLCX'].LeafPositionBoundaries[i+1]) / 2
+                if abs(y) < radius:
+                    bldp['MLCX'].LeafJawPositions[i] = -np.sqrt(radius**2 - y**2)
+                    bldp['MLCX'].LeafJawPositions[i + nleaves] = np.sqrt(radius**2 - y**2)
+
 def get_structure_set_module(ds, DT, TM, current_study):
     ds.StructureSetLabel = "Structure Set" # T1
     # ds.StructureSetName = "" # T3
@@ -704,6 +760,9 @@ if __name__ == '__main__':
                 dicom.write_file(rd.filename, rd)
             elif study.modality == "RTPLAN":
                 rp = build_rt_plan(current_study = current_study)
+                for beam in rp.BeamSequence:
+                    conform_mlc_to_circle(beam, 30, [0,0])
+                    conform_jaws_to_mlc(beam)
                 current_study['RTPLAN'] = rp
                 dicom.write_file(rp.filename, rp)
             elif study.modality == "RTSTRUCT":
