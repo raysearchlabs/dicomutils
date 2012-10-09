@@ -520,10 +520,30 @@ def get_roi_contour_module(ds):
     ds.ROIContourSequence = []
     return ds
 
+roicolors = [[255,0,0],
+             [0,255,0],
+             [0,0,255],
+             [255,255,0],
+             [0,255,255],
+             [255,0,255],
+             [255,127,0],
+             [127,255,0],
+             [0,255,127],
+             [0,127,255],
+             [127,0,255],
+             [255,0,127],
+             [255,127,127],
+             [127,255,127],
+             [127,127,255],
+             [255,255,127],
+             [255,127,255],
+             [127,255,255]]
+
 def add_roi_to_roi_contour(ds, roi, contours, current_study):
     newroi = dicom.dataset.Dataset()
     ds.ROIContourSequence.append(newroi)
     newroi.ReferencedROINumber = roi.ROINumber
+    newroi.ROIDisplayColor = roicolors[(roi.ROINumber-1) % len(roicolors)]
     newroi.ContourSequence = []
     for i, contour in enumerate(contours, 1):
         c = dicom.dataset.Dataset()
@@ -716,6 +736,12 @@ if __name__ == '__main__':
                         help='The modality to write. (default: CT)', action=ModalityGroupAction)
     parser.add_argument('--nominal-energy', dest='nominal_energy', default=None,
                         help='The nominal energy of beams in an RT Plan.')
+    parser.add_argument('--values', dest='values', default=[], action='append',
+                        help="""Set the Hounsfield or dose values in a volume to the given value.
+                        For syntax, see the forthcoming documentation or the source code...""")
+    parser.add_argument('--structure', dest='structures', default=[], action='append',
+                        help="""Add a structure to the current list of structure sets.
+                        For syntax, see the forthcoming documentation or the source code...""")
     
     args = parser.parse_args(namespace = argparse.Namespace(studies=[[]]))
 
@@ -723,26 +749,50 @@ if __name__ == '__main__':
     nVoxels = [int(x) for x in args.Voxels.split(",")]
     x,y,z = get_centered_coordinates(voxelGrid, nVoxels)
     
-    ctData = np.ones(nVoxels, dtype=np.int16)*1024
-    ctData += np.arange(nVoxels[0]).reshape((nVoxels[0],1,1))
-    ctData += np.arange(nVoxels[1]).reshape((1,nVoxels[1],1))*10
-    ctData += np.arange(nVoxels[2]).reshape((1,1,nVoxels[2]))*100
-    ctData -= 1000*(np.sqrt(x**2+y**2+z**2) < 30)
+    def build_sphere_contours(z, name, radius, center, interpreted_type, ntheta = 32):
+        #print "build_sphere_contours", z, name, radius, center, interpreted_type, ntheta
+        contours = np.array([[[np.sqrt(radius**2 - (Z-center[2])**2) * np.cos(theta) + center[0],
+                               np.sqrt(radius**2 - (Z-center[2])**2) * np.sin(theta) + center[1],
+                               Z]
+                              for theta in np.linspace(0, 2*np.pi, ntheta, endpoint=False)]
+                             for Z in z[np.abs(z - center[2]) < radius]])
+        return {'Name': name,
+                'InterpretedType': interpreted_type,
+                'Contours': contours}
 
-    radius = 30.0
-    structs = [{'Name': 'Sphere',
-                'InterpretedType': 'GTV',
-                'Contours': np.array([[[np.sqrt(radius**2 - Z**2) * np.cos(theta), np.sqrt(radius**2 - Z**2) * np.sin(theta), Z] for theta in np.linspace(0, 2*np.pi, 33)[:-1]] for Z in z[0,0,np.abs(z[0,0,:]) < radius]])},
-               {'Name': 'Box',
-                'InterpretedType': 'PTV',
-                'Contours': np.array([[[X*radius,Y*X*radius,Z] for X in [-1,1] for Y in [-1,1]] for Z in z[0,0,np.abs(z[0,0,:]) < radius]])},
-               {'Name': 'External',
-                'InterpretedType': 'EXTERNAL',
-                'Contours': np.array([[[X*voxelGrid[0]*nVoxels[0]/2.0,Y*X*voxelGrid[1]*nVoxels[1]/2.0,Z] for X in [-1,1] for Y in [-1,1]] for Z in z[0,0,np.abs(z[0,0,:]) < voxelGrid[2]*nVoxels[2]/2.0]])}]
-
+    def build_box_contours(z, name, size, center, interpreted_type):
+        #print "build_box_contours", z, name, size, center, interpreted_type
+        if not hasattr(size, '__len__'):
+            size = [size] * 3
+        contours = np.array([[[X*size[0]/2 + center[0],
+                               Y*X*size[1]/2 + center[1],
+                               Z]
+                              for X in [-1,1]
+                              for Y in [-1,1]]
+                             for Z in z[np.abs(z - center[2]) < size[2]/2]])
+        return {'Name': name,
+                'InterpretedType': interpreted_type,
+                'Contours': contours}
+    
     for study in args.studies:
         current_study = {}
         for study in study:
+            ctData = np.zeros(nVoxels, dtype=np.int16)*1024
+            for value in study.values:
+                if value.find(",") == -1:
+                    ctData[:] = float(value)
+                else:
+                    shape = value.split(",")[0]
+                    if shape == "sphere":
+                        val = value.split(",")[1]
+                        radius = float(value.split(",")[2])
+                        if len(value.split(",",3)) == 4:
+                            center = value.split(",",3)[3]
+                            center = [float(x) for x in center.lstrip('[').rstrip(']').split(",")]
+                        else:
+                            center = [0,0,0]
+                        ctData[(x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2] = val
+
             if study.patient_position != None:
                 current_study['PatientPosition'] = study.patient_position
             if study.nominal_energy != None:
@@ -766,6 +816,43 @@ if __name__ == '__main__':
                 current_study['RTPLAN'] = rp
                 dicom.write_file(rp.filename, rp)
             elif study.modality == "RTSTRUCT":
-                rs = build_rt_structure_set(structs, current_study = current_study)
+                structures = []
+                for structure in study.structures:
+                    shape = structure.split(",")[0]
+                    if shape == 'sphere':
+                        name = structure.split(",")[1]
+                        radius = float(structure.split(",")[2])
+                        interpreted_type = structure.split(",")[3]
+                        if len(structure.split(",")) > 4:
+                            center = structure.split(",",4)[4]
+                            center = [float(x) for x in center.lstrip('[').rstrip(']').split(",")]
+                        else:
+                            center = [0,0,0]
+                        structures.append(build_sphere_contours(z[0,0,:], name, radius, center, interpreted_type))
+                    elif shape == 'box':
+                        name = structure.split(",")[1]
+                        size = structure.split(",",2)[2]
+                        if size.startswith("["):
+                            size = structure.split(",", 2)[2]
+                            rest = size[size.find(']')+2:]
+                            size = size[:size.find(']')+1]
+                            size = [float(x) for x in size.lstrip('[').rstrip(']').split(",")]
+                        else:
+                            size = float(structure.split(",")[2])
+                            rest = structure.split(",",3)[3]
+                        interpreted_type = rest.split(",")[0]
+                        if len(rest.split(",")) >= 2:
+                            center = rest.split(",",1)[1]
+                            center = [float(x) for x in center.lstrip('[').rstrip(']').split(",")]
+                        else:
+                            center = [0,0,0]
+                        structures.append(build_box_contours(z[0,0,:], name, size, center, interpreted_type))
+                    elif shape == "external":
+                        structures.append(build_box_contours(z[0,0,:], 'External', [voxelGrid[0]*nVoxels[0],
+                                                                                    voxelGrid[1]*nVoxels[1],
+                                                                                    voxelGrid[2]*nVoxels[2]],
+                                                             [0,0,0], 'EXTERNAL'))
+                    
+                rs = build_rt_structure_set(structures, current_study = current_study)
                 current_study['RTSTRUCT'] = rs
                 dicom.write_file(rs.filename, rs)
