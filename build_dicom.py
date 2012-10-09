@@ -776,9 +776,9 @@ if __name__ == '__main__':
     
     for study in args.studies:
         current_study = {}
-        for study in study:
+        for series in study:
             ctData = np.zeros(nVoxels, dtype=np.int16)*1024
-            for value in study.values:
+            for value in series.values:
                 if value.find(",") == -1:
                     ctData[:] = float(value)
                 else:
@@ -793,31 +793,31 @@ if __name__ == '__main__':
                             center = [0,0,0]
                         ctData[(x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2] = val
 
-            if study.patient_position != None:
-                current_study['PatientPosition'] = study.patient_position
-            if study.nominal_energy != None:
-                current_study['NominalEnergy'] = study.nominal_energy
-            if study.modality == "CT":
+            if series.patient_position != None:
+                current_study['PatientPosition'] = series.patient_position
+            if series.nominal_energy != None:
+                current_study['NominalEnergy'] = series.nominal_energy
+            if series.modality == "CT":
                 if 'PatientPosition' not in current_study:
                     parser.error("Patient position must be specified when writing CT images!")
                 datasets = build_ct(ctData, voxelGrid, current_study = current_study)
                 current_study['CT'] = datasets
                 for ds in datasets:
                     dicom.write_file(ds.filename, ds)
-            elif study.modality == "RTDOSE":
+            elif series.modality == "RTDOSE":
                 rd = build_rt_dose(ctData, voxelGrid, current_study = current_study)
                 current_study['RTDOSE'] = rd
                 dicom.write_file(rd.filename, rd)
-            elif study.modality == "RTPLAN":
+            elif series.modality == "RTPLAN":
                 rp = build_rt_plan(current_study = current_study)
                 for beam in rp.BeamSequence:
                     conform_mlc_to_circle(beam, 30, [0,0])
                     conform_jaws_to_mlc(beam)
                 current_study['RTPLAN'] = rp
                 dicom.write_file(rp.filename, rp)
-            elif study.modality == "RTSTRUCT":
+            elif series.modality == "RTSTRUCT":
                 structures = []
-                for structure in study.structures:
+                for structure in series.structures:
                     shape = structure.split(",")[0]
                     if shape == 'sphere':
                         name = structure.split(",")[1]
