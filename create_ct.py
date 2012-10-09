@@ -87,8 +87,9 @@ def get_default_rt_plan_dataset(filename, current_study):
     get_rt_general_plan_module(ds, DT, TM, current_study)
     #get_rt_prescription_module(ds)
     #get_rt_tolerance_tables(ds)
-    #get_rt_patient_setup_module(ds)
-    get_rt_beams_module(ds, 3, [10,40,10], [1,0.5,1])
+    if 'PatientPosition' in current_study:
+        get_rt_patient_setup_module(ds, current_study)
+    get_rt_beams_module(ds, 3, [10,40,10], [10,5,10], current_study)
     get_rt_fraction_scheme_module(ds, 30)
     #get_approval_module(ds)
     return ds
@@ -322,7 +323,14 @@ def cumsum(i):
         s += x
         yield s
 
-def get_rt_beams_module(ds, nbeams, nleaves, leafwidths):
+def get_rt_patient_setup_module(ds, current_study):
+    ps = dicom.dataset.Dataset()
+    ps.PatientSetupNumber = 1
+    ps.PatientPosition = current_study['PatientPosition']
+    ds.PatientSetupSequence = [ps]
+    return ps
+
+def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, current_study):
     """nleaves is a list [na, nb, nc, ...] and leafwidths is a list [wa, wb, wc, ...]
     so that there are na leaves with width wa followed by nb leaves with width wb etc."""
     ds.BeamSequence = [dicom.dataset.Dataset() for k in range(nbeams)]
@@ -357,7 +365,8 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths):
         beam.BeamLimitingDeviceSequence[2].NumberOfLeafJawPairs = sum(nleaves)
         mlcsize = sum(n*w for n,w in zip(nleaves, leafwidths))
         beam.BeamLimitingDeviceSequence[2].LeafPositionBoundaries = list(x - mlcsize/2 for x in cumsum(w for n,w in zip(nleaves, leafwidths) for k in range(n)))
-        # beam.ReferencedPatientSetupNumber = 0  # T3
+        if 'PatientPosition' in current_study:
+            beam.ReferencedPatientSetupNumber = 1  # T3
         # beam.ReferencedReferenceImageSequence = []  # T3
         # beam.PlannedVerificationImageSequence = []  # T3
         beam.TreatmentDeliveryType = "TREATMENT"
@@ -389,6 +398,8 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths):
                 cp.BeamLimitingDevicePositionSequence[2].LeafJawPositions = [0,0]*sum(nleaves)
                 cp.GantryAngle = i * 360 / nbeams
                 cp.GantryRotationDirection = 'NONE'
+                if 'NominalEnergy' in current_study:
+                    cp.NominalBeamEnergy = current_study['NominalEnergy']
                 # cp.GantryPitchAngle = 0 # T3
                 # cp.GantryPitchRotationDirection = "NONE" # T3
                 cp.BeamLimitingDeviceAngle = 0
@@ -544,6 +555,8 @@ def build_rt_dose(doseData, voxelGrid, current_study, **kwargs):
     rd.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
                                -(nVoxels[1]-1)*voxelGrid[1]/2.0,
                                -(nVoxels[2]-1)*voxelGrid[2]/2.0]
+    if 'PatientPosition' in current_study:
+        rd.PatientPosition = current_study['PatientPosition']
     
     rd.PixelData=doseData.tostring(order='F')
     for k, v in kwargs.iteritems():
@@ -577,7 +590,8 @@ def build_rt_structure_set(rois, current_study, **kwargs):
     rs.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
                                -(nVoxels[1]-1)*voxelGrid[1]/2.0,
                                -(nVoxels[2]-1)*voxelGrid[2]/2.0]
-    
+    if 'PatientPosition' in current_study:
+        rs.PatientPosition = current_study['PatientPosition']
     for k, v in kwargs.iteritems():
         if v != None:
             setattr(rs, k, v)
@@ -608,6 +622,8 @@ def build_ct(ctData, voxelGrid, current_study, **kwargs):
                                    -(nVoxels[1]-1)*voxelGrid[1]/2.0,
                                    -(nVoxels[2]-1)*voxelGrid[2]/2.0 + z*voxelGrid[2]]
         ct.PixelData=ctData[:,:,z].tostring(order='F')
+        if 'PatientPosition' in current_study:
+            ct.PatientPosition = current_study['PatientPosition']
         for k, v in kwargs.iteritems():
             if v != None:
                 setattr(ct, k, v)
@@ -634,7 +650,7 @@ if __name__ == '__main__':
             namespace.studies.append([])
 
     parser = argparse.ArgumentParser(description='Create DICOM CT data.')
-    parser.add_argument('--patient-position', dest='PatientPosition', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDP'],
+    parser.add_argument('--patient-position', dest='patient_position', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDP'],
                         help='The patient position written in the images. Required for CT and MR. (default: not specified)')
     parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
                         help='The size of a single voxel in mm. (default: 1,2,4)')
@@ -642,6 +658,8 @@ if __name__ == '__main__':
                         help='The number of voxels in the dataset. (default: 64,32,16)')
     parser.add_argument('--modality', dest='modality', default=[], choices = ['CT', "RTDOSE", "RTPLAN", "RTSTRUCT"],
                         help='The modality to write. (default: CT)', action=ModalityGroupAction)
+    parser.add_argument('--nominal-energy', dest='nominal_energy', default=None,
+                        help='The nominal energy of beams in an RT Plan.')
     
     args = parser.parse_args(namespace = argparse.Namespace(studies=[[]]))
 
@@ -669,22 +687,26 @@ if __name__ == '__main__':
     for study in args.studies:
         current_study = {}
         for study in study:
+            if study.patient_position != None:
+                current_study['PatientPosition'] = study.patient_position
+            if study.nominal_energy != None:
+                current_study['NominalEnergy'] = study.nominal_energy
             if study.modality == "CT":
-                if study.PatientPosition == None:
+                if 'PatientPosition' not in current_study:
                     parser.error("Patient position must be specified when writing CT images!")
-                datasets = build_ct(ctData, voxelGrid, PatientPosition = study.PatientPosition, current_study = current_study)
+                datasets = build_ct(ctData, voxelGrid, current_study = current_study)
                 current_study['CT'] = datasets
                 for ds in datasets:
                     dicom.write_file(ds.filename, ds)
             elif study.modality == "RTDOSE":
-                rd = build_rt_dose(ctData, voxelGrid, PatientPosition = study.PatientPosition, current_study = current_study)
+                rd = build_rt_dose(ctData, voxelGrid, current_study = current_study)
                 current_study['RTDOSE'] = rd
                 dicom.write_file(rd.filename, rd)
             elif study.modality == "RTPLAN":
-                rp = build_rt_plan(PatientPosition = study.PatientPosition, current_study = current_study)
+                rp = build_rt_plan(current_study = current_study)
                 current_study['RTPLAN'] = rp
                 dicom.write_file(rp.filename, rp)
             elif study.modality == "RTSTRUCT":
-                rs = build_rt_structure_set(structs, PatientPosition = study.PatientPosition, current_study = current_study)
+                rs = build_rt_structure_set(structs, current_study = current_study)
                 current_study['RTSTRUCT'] = rs
                 dicom.write_file(rs.filename, rs)
