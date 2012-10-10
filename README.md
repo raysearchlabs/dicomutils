@@ -23,6 +23,8 @@ $ ./build_dicom.py --patient-position HFS --values 1024 --voxelsize 5,5,5 --voxe
       --structure external --modality RTSTRUCT
 ```
 
+![Screenshot of 50x50x50 water phantom with outline] (https://github.com/raysearchlabs/dicomutils/wiki/simplebox.png)
+
 Generate CT data with non-cubic voxels showing a 5cm radius sphere of water in vacuum, with an ROI covering it, an RT Dose object with 50 Gy to the sphere 
 and a random RT plan:
 
