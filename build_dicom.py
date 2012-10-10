@@ -3,6 +3,7 @@
 
 import numpy as np
 import dicom, time, uuid, sys, datetime
+import coordinates
 
 # Be careful to pass good fp numbers...
 if hasattr(dicom, 'config'):
@@ -454,15 +455,20 @@ def conform_jaws_to_mlc(beam):
             bldp = getblds(cp.BeamLimitingDevicePositionSequence)
 
             if bldp['MLCX'] != None and bldp['ASYMY'] != None:
-                min_open_leafi = nmin(i for i in range(len(bldp['MLCX'].LeafJawPositions)/2) if bldp['MLCX'].LeafJawPositions[i] >= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
-                max_open_leafi = nmax(i for i in range(len(bldp['MLCX'].LeafJawPositions)/2) if bldp['MLCX'].LeafJawPositions[i] >= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                min_open_leafi = nmin(i for i in range(nleaves)
+                                      if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                max_open_leafi = nmax(i for i in range(nleaves)
+                                      if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
                 if min_open_leafi != None and max_open_leafi != None:
-                    bldp['ASYMY'].LeafJawPositions = [bld['MLCX'].LeafPositionBoundaries[min_open_leafi],
-                                                      bld['MLCX'].LeafPositionBoundaries[max_open_leafi + 1]]
-            if bldp['MLCX'] != None and bldp['ASYMY'] != None:
-                min_open_leaf = min(bldp['MLCX'].LeafJawPositions[i] for i in range(len(bldp['MLCX'].LeafJawPositions)/2) if bldp['MLCX'].LeafJawPositions[i] >= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
-                max_open_leaf = max(bldp['MLCX'].LeafJawPositions[i] for i in range(len(bldp['MLCX'].LeafJawPositions)/2) if bldp['MLCX'].LeafJawPositions[i] >= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
-                bldp['ASYMX'].LeafJawPositions = [min_open_leaf, max_open_leaf]
+                    bldp['ASYMY'].LeafJawPositions = [bld['MLCX'].LeafPositionBoundaries[min_open_leafi].quantize(Decimal("0.01")),
+                                                      bld['MLCX'].LeafPositionBoundaries[max_open_leafi + 1].quantize(Decimal("0.01"))]
+            if bldp['MLCX'] != None and bldp['ASYMX'] != None:
+                min_open_leaf = min(bldp['MLCX'].LeafJawPositions[i] for i in range(nleaves)
+                                    if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                max_open_leaf = max(bldp['MLCX'].LeafJawPositions[i+nleaves] for i in range(nleaves)
+                                    if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                bldp['ASYMX'].LeafJawPositions = [min_open_leaf.quantize(Decimal("0.01")),
+                                                  max_open_leaf.quantize(Decimal("0.01"))]
 
 def conform_mlc_to_circle(beam, radius, center):
     bld = getblds(beam.BeamLimitingDeviceSequence)
@@ -607,7 +613,6 @@ def build_rt_plan(current_study, **kwargs):
         if v != None:
             setattr(rp, k, v)
     return rp
-        
 
 def build_rt_dose(doseData, voxelGrid, current_study, **kwargs):
     nVoxels = doseData.shape
@@ -713,6 +718,46 @@ def get_centered_coordinates(voxelGrid, nVoxels):
     z=(z-(nVoxels[2]-1)/2.0)*voxelGrid[2]
     return x,y,z
 
+def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAngle):
+    M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
+         * coordinates.Mfg(gantryAngle)
+         * np.linalg.inv(coordinates.Mfs(0))
+         * np.linalg.inv(coordinates.Mse(0,0))
+         * np.linalg.inv(coordinates.Met(0,0,0,0))
+         * np.linalg.inv(coordinates.Mtp(0,0,0,0,0,0))
+         * np.linalg.inv(coordinates.Mpd()))
+    return M
+
+def add_lightfield(ctData, rtplan, x, y, z):
+    # TODO: This only considers gantry rotation and BeamLimitingDeviceAngle -
+    #       not patient orientation, isocenter position, table tilts etc.
+    for beam in rtplan.BeamSequence:
+        print beam.BeamNumber
+        bld = getblds(beam.BeamLimitingDeviceSequence)
+        gantryAngle = None
+        beamLimitingDeviceAngle = Decimal(0)
+        for cp in beam.ControlPointSequence:
+            if hasattr(cp, 'GantryAngle'):
+                gantryAngle = cp.GantryAngle + Decimal("120")
+            if hasattr(cp, 'BeamLimitingDeviceAngle'):
+                blda = cp.BeamLimitingDeviceAngle
+            if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+                bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+            Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle)
+            coords = np.array([x.ravel(),y.ravel(),z.ravel(),np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
+            c = Mdb * coords
+            c2 = np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
+            nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+            for i in range(nleaves):
+                ctData.ravel()[(c2[0,:] > max(float(bldp['ASYMX'].LeafJawPositions[0]),
+                                              float(bld['MLCX'].LeafPositionBoundaries[i])))
+                               * (c2[0,:] <= min(float(bldp['ASYMX'].LeafJawPositions[1]),
+                                                 float(bld['MLCX'].LeafPositionBoundaries[i+1])))
+                               * (c2[1,:] >= max(float(bldp['ASYMY'].LeafJawPositions[0]),
+                                                 float(bldp['MLCX'].LeafJawPositions[i])))
+                               * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
+                                                 float(bldp['MLCX'].LeafJawPositions[i + nleaves])))] += 1
+
 if __name__ == '__main__':
     import argparse
     class ModalityGroupAction(argparse.Action):
@@ -739,6 +784,8 @@ if __name__ == '__main__':
     parser.add_argument('--values', dest='values', default=[], action='append',
                         help="""Set the Hounsfield or dose values in a volume to the given value.
                         For syntax, see the forthcoming documentation or the source code...""")
+    #parser.add_argument('--sad', dest='sad', default=1000,
+    #                    help="The Source to Axis distance.")
     parser.add_argument('--structure', dest='structures', default=[], action='append',
                         help="""Add a structure to the current list of structure sets.
                         For syntax, see the forthcoming documentation or the source code...""")
@@ -779,7 +826,7 @@ if __name__ == '__main__':
         for series in study:
             ctData = np.zeros(nVoxels, dtype=np.int16)*1024
             for value in series.values:
-                if value.find(",") == -1:
+                if value.find(",") == -1 and (value[0].isdigit() or value[0] == '-'):
                     ctData[:] = float(value)
                 else:
                     shape = value.split(",")[0]
@@ -792,6 +839,8 @@ if __name__ == '__main__':
                         else:
                             center = [0,0,0]
                         ctData[(x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2] = val
+                    if shape == "lightfield":
+                        add_lightfield(ctData, current_study['RTPLAN'], x, y, z)
 
             if series.patient_position != None:
                 current_study['PatientPosition'] = series.patient_position

@@ -4,24 +4,24 @@ from math import sin, cos, pi
 
 def rotX(psi):
     return np.matrix([[1, 0, 0, 0],
-                      [0, cos(psi), sin(psi), 0],
-                      [0, -sin(psi), cos(psi), 0],
+                      [0, cos(float(psi)*pi/180), sin(float(psi)*pi/180), 0],
+                      [0, -sin(float(psi)*pi/180), cos(float(psi)*pi/180), 0],
                       [0, 0, 0, 1]])
 def rotY(phi):
-    return np.matrix([[cos(phi), 0, sin(phi), 0],
+    return np.matrix([[cos(float(phi)*pi/180), 0, sin(float(phi)*pi/180), 0],
                       [0, 1, 0, 0],
-                      [-sin(phi), 0, cos(phi), 0],
+                      [-sin(float(phi)*pi/180), 0, cos(float(phi)*pi/180), 0],
                       [0, 0, 0, 1]])
 def rotZ(theta):
-    return np.matrix([[cos(theta), sin(theta), 0, 0],
-                      [-sin(theta), cos(theta), 0, 0],
+    return np.matrix([[cos(float(theta)*pi/180), sin(float(theta)*pi/180), 0, 0],
+                      [-sin(float(theta)*pi/180), cos(float(theta)*pi/180), 0, 0],
                       [0, 0, 1, 0],
                       [0, 0, 0, 1]])
 
 def translate(x,y,z):
-    return np.matrix([[1,0,0,x],
-                      [0,1,0,y],
-                      [0,0,1,z],
+    return np.matrix([[1,0,0,float(x)],
+                      [0,1,0,float(y)],
+                      [0,0,1,float(z)],
                       [0,0,0,1]])
 
 def invert4x4fast(m):
