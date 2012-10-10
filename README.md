@@ -25,12 +25,18 @@ $ ./build_dicom.py --patient-position HFS --values 1024 --voxelsize 5,5,5 --voxe
 
 ![Screenshot of 50x50x50 water phantom with outline] (https://github.com/raysearchlabs/dicomutils/wiki/simplebox.png)
 
-Generate CT data with non-cubic voxels showing a 5cm radius sphere of water in vacuum, with an ROI covering it, an RT Dose object with 50 Gy to the sphere 
-and a random RT plan:
+Generate CT data with two cavities (one denser), rois covering them, a box outline, an arbitrary plan 
+and a lightfield "dose":
 
 ```bash
-$ ./build_dicom.py --patient-position HFS --values 0 --values sphere,1024,20 --voxelsize 1,2,4 --voxels 120,60,30 --modality CT \
-      --structure sphere,Ball,50,EXTERNAL --modality RTSTRUCT \
-      --modality RTPLAN \
-      --values 0 --values sphere,50,20 --modality RTDOSE
+$ ./build_dicom.py --patient-position HFS --values 1024 \
+        --values "sphere,0,25,[50;86.6;0]" --values "sphere,2024,25,[50;-86.6;0]" \
+        --voxelsize 4,4,4 --voxels 50,50,50 --modality CT \
+        --structure external \
+        --structure "sphere,Ball,25,CAVITY,[50;86.6;0]" \
+        --structure "sphere,Ball2,25,CAVITY,[50;-86.6;0]" --modality RTSTRUCT \
+        --nominal-energy 6 --modality RTPLAN \
+        --values 0 --values lightfield --modality RTDOSE
 ```
+
+![Screenshot of plan with lightfield dose] (https://raw.github.com/wiki/raysearchlabs/dicomutils/lightfieldplan.png)
