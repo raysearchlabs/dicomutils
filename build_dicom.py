@@ -20,19 +20,20 @@ def generate_uid(_uuid = None):
 
 ImplementationClassUID = '2.25.229451600072090404564544894284998027172'
 
-def get_empty_dataset(filename, storagesopclass):
+def get_empty_dataset(filename, storagesopclass, sopinstanceuid):
     file_meta = dicom.dataset.Dataset()
     file_meta.MediaStorageSOPClassUID = get_uid(storagesopclass)
-    file_meta.MediaStorageSOPInstanceUID = generate_uid()
+    file_meta.MediaStorageSOPInstanceUID = sopinstanceuid
     file_meta.ImplementationClassUID = ImplementationClassUID
     ds = dicom.dataset.FileDataset(filename, {}, file_meta=file_meta, preamble="\0"*128)
     return ds
 
-def get_default_ct_dataset(filename):
+def get_default_ct_dataset(sopinstanceuid):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
-    ds = get_empty_dataset(filename, "CT Image Storage")
-    get_sop_common_module(ds, DT, TM, "CT Image Storage")
+    filename = "CT_%s.dcm" % (sopinstanceuid,)
+    ds = get_empty_dataset(filename, "CT Image Storage", sopinstanceuid)
+    get_sop_common_module(ds, DT, TM, "CT Image Storage", sopinstanceuid)
     get_ct_image_module(ds)
     get_image_pixel_macro(ds)
     get_patient_module(ds)
@@ -44,11 +45,13 @@ def get_default_ct_dataset(filename):
     get_image_plane_module(ds)
     return ds
 
-def get_default_rt_dose_dataset(filename, current_study):
+def get_default_rt_dose_dataset(current_study):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
-    ds = get_empty_dataset(filename, "RT Dose Storage")
-    get_sop_common_module(ds, DT, TM, "RT Dose Storage")
+    sopinstanceuid = generate_uid()
+    filename = "RTDOSE_%s.dcm" % (sopinstanceuid,)
+    ds = get_empty_dataset(filename, "RT Dose Storage", sopinstanceuid)
+    get_sop_common_module(ds, DT, TM, "RT Dose Storage", sopinstanceuid)
     get_patient_module(ds)
     get_image_pixel_macro(ds)
     get_general_study_module(ds, DT, TM)
@@ -61,11 +64,13 @@ def get_default_rt_dose_dataset(filename, current_study):
     get_rt_dose_module(ds, current_study)
     return ds
 
-def get_default_rt_structure_set_dataset(filename, current_study):
+def get_default_rt_structure_set_dataset(current_study):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
-    ds = get_empty_dataset(filename, "RT Structure Set Storage")
-    get_sop_common_module(ds, DT, TM, "RT Structure Set Storage")
+    sopinstanceuid = generate_uid()
+    filename = "RTSTRUCT_%s.dcm" % (sopinstanceuid,)
+    ds = get_empty_dataset(filename, "RT Structure Set Storage", sopinstanceuid)
+    get_sop_common_module(ds, DT, TM, "RT Structure Set Storage", sopinstanceuid)
     get_patient_module(ds)
     get_general_study_module(ds, DT, TM)
     get_rt_series_module(ds, DT, TM, "RTSTRUCT")
@@ -75,11 +80,13 @@ def get_default_rt_structure_set_dataset(filename, current_study):
     get_rt_roi_observations_module(ds)
     return ds
 
-def get_default_rt_plan_dataset(filename, current_study):
+def get_default_rt_plan_dataset(current_study):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
-    ds = get_empty_dataset(filename, "RT Plan Storage")
-    get_sop_common_module(ds, DT, TM, "RT Plan Storage")
+    sopinstanceuid = generate_uid()
+    filename = "RTPLAN_%s.dcm" % (sopinstanceuid,)
+    ds = get_empty_dataset(filename, "RT Plan Storage", sopinstanceuid)
+    get_sop_common_module(ds, DT, TM, "RT Plan Storage", sopinstanceuid)
     get_patient_module(ds)
     get_general_study_module(ds, DT, TM)
     get_rt_series_module(ds, DT, TM, "RTPLAN")
@@ -95,10 +102,10 @@ def get_default_rt_plan_dataset(filename, current_study):
     #get_approval_module(ds)
     return ds
 
-def get_sop_common_module(ds, DT, TM, modality):
+def get_sop_common_module(ds, DT, TM, modality, sopinstanceuid):
     # Type 1
     ds.SOPClassUID = get_uid(modality)
-    ds.SOPInstanceUID = ""
+    ds.SOPInstanceUID = sopinstanceuid
     # Type 3
     ds.InstanceCreationDate = DT
     ds.InstanceCreationTime = TM
@@ -494,7 +501,8 @@ def get_structure_set_module(ds, DT, TM, current_study):
         reffor.FrameofReferenceUID = get_current_study_uid('FrameofReferenceUID', current_study)
         reffor.RelatedFrameofReferenceUID = [] # T3
         refstudy = dicom.dataset.Dataset()
-        refstudy.RTReferencedStudyUID = get_current_study_uid('StudyUID', current_study) # T3
+        refstudy.ReferencedSOPClassUID = get_uid("Detached Study Management SOP Class") # T1, but completely bogus.
+        refstudy.ReferencedSOPInstanceUID = get_current_study_uid('StudyUID', current_study) # T1
         refseries = dicom.dataset.Dataset()
         refseries.SeriesInstanceUID = current_study['CT'][0].SeriesInstanceUID
         refseries.ContourImageSequence = [] # T3
@@ -602,10 +610,7 @@ def build_rt_plan(current_study, **kwargs):
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    sopinstanceuid = generate_uid()
-    filename = "RTPLAN_%s.dcm" % (sopinstanceuid,)
-    rp = get_default_rt_plan_dataset(filename, current_study)
-    rp.SOPInstanceUID = sopinstanceuid
+    rp = get_default_rt_plan_dataset(current_study)
     rp.SeriesInstanceUID = seriesuid
     rp.StudyInstanceUID = studyuid
     rp.FrameofReferenceUID = FoRuid
@@ -616,14 +621,10 @@ def build_rt_plan(current_study, **kwargs):
 
 def build_rt_dose(doseData, voxelGrid, current_study, **kwargs):
     nVoxels = doseData.shape
-    rtdoseuid = generate_uid()
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    sopinstanceuid = generate_uid()
-    filename = "RTDOSE_%s.dcm" % (rtdoseuid,)
-    rd = get_default_rt_dose_dataset(filename, current_study)
-    rd.SOPInstanceUID = sopinstanceuid
+    rd = get_default_rt_dose_dataset(current_study)
     rd.SeriesInstanceUID = seriesuid
     rd.StudyInstanceUID = studyuid
     rd.FrameofReferenceUID = FoRuid
@@ -651,28 +652,14 @@ def build_rt_structure_set(rois, current_study, **kwargs):
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    sopinstanceuid = generate_uid()
-    filename = "RTSTRUCT_%s.dcm" % (rtstructuid,)
-    rs = get_default_rt_structure_set_dataset(filename, current_study)
+    rs = get_default_rt_structure_set_dataset(current_study)
     for roi in rois:
         structuresetroi = add_roi_to_structure_set(rs, roi['Name'], current_study)
         add_roi_to_roi_contour(rs, structuresetroi, roi['Contours'], current_study)
         add_roi_to_rt_roi_observation(rs, structuresetroi, roi['Name'], roi['InterpretedType'])
-    rs.SOPInstanceUID = sopinstanceuid
     rs.SeriesInstanceUID = seriesuid
     rs.StudyInstanceUID = studyuid
     rs.FrameofReferenceUID = FoRuid
-    rs.Rows = nVoxels[1]
-    rs.Columns = nVoxels[0]
-    rs.NumberofFrames = nVoxels[2]
-    rs.PixelSpacing = [voxelGrid[1], voxelGrid[0]]
-    rs.SliceThickness = voxelGrid[2]
-    rs.GridFrameOffsetVector = [z*voxelGrid[2] for z in range(nVoxels[2])]
-    rs.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
-                               -(nVoxels[1]-1)*voxelGrid[1]/2.0,
-                               -(nVoxels[2]-1)*voxelGrid[2]/2.0]
-    if 'PatientPosition' in current_study:
-        rs.PatientPosition = current_study['PatientPosition']
     for k, v in kwargs.iteritems():
         if v != None:
             setattr(rs, k, v)
@@ -689,9 +676,7 @@ def build_ct(ctData, voxelGrid, current_study, **kwargs):
     cts=[]
     for z in range(nVoxels[2]):
         sopinstanceuid = "%s.%i" % (ctbaseuid, z)
-        filename = "CT_%s.dcm" % (sopinstanceuid,)
-        ct = get_default_ct_dataset(filename)
-        ct.SOPInstanceUID = sopinstanceuid
+        ct = get_default_ct_dataset(sopinstanceuid)
         ct.SeriesInstanceUID = seriesuid
         ct.StudyInstanceUID = studyuid
         ct.FrameofReferenceUID = FoRuid
@@ -732,7 +717,6 @@ def add_lightfield(ctData, rtplan, x, y, z):
     # TODO: This only considers gantry rotation and BeamLimitingDeviceAngle -
     #       not patient orientation, isocenter position, table tilts etc.
     for beam in rtplan.BeamSequence:
-        print beam.BeamNumber
         bld = getblds(beam.BeamLimitingDeviceSequence)
         gantryAngle = None
         beamLimitingDeviceAngle = Decimal(0)
@@ -826,16 +810,16 @@ if __name__ == '__main__':
         for series in study:
             ctData = np.zeros(nVoxels, dtype=np.int16)*1024
             for value in series.values:
-                if value.find(",") == -1 and (value[0].isdigit() or value[0] == '-'):
-                    ctData[:] = float(value)
+                value = value.split(",")
+                if len(value) == 1 and (value[0][0].isdigit() or value[0][0] == '-'):
+                    ctData[:] = float(value[0])
                 else:
-                    shape = value.split(",")[0]
+                    shape = value[0]
                     if shape == "sphere":
-                        val = value.split(",")[1]
-                        radius = float(value.split(",")[2])
-                        if len(value.split(",",3)) == 4:
-                            center = value.split(",",3)[3]
-                            center = [float(x) for x in center.lstrip('[').rstrip(']').split(",")]
+                        val = float(value[1])
+                        radius = float(value[2])
+                        if len(value) > 3:
+                            center = [float(c) for c in value[3].lstrip('[').rstrip(']').split(";")]
                         else:
                             center = [0,0,0]
                         ctData[(x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2] = val
@@ -867,32 +851,27 @@ if __name__ == '__main__':
             elif series.modality == "RTSTRUCT":
                 structures = []
                 for structure in series.structures:
-                    shape = structure.split(",")[0]
+                    structure = structure.split(",")
+                    shape = structure[0]
                     if shape == 'sphere':
-                        name = structure.split(",")[1]
-                        radius = float(structure.split(",")[2])
-                        interpreted_type = structure.split(",")[3]
-                        if len(structure.split(",")) > 4:
-                            center = structure.split(",",4)[4]
-                            center = [float(x) for x in center.lstrip('[').rstrip(']').split(",")]
+                        name = structure[1]
+                        radius = float(structure[2])
+                        interpreted_type = structure[3]
+                        if len(structure) > 4:
+                            center = [float(c) for c in structure[4].lstrip('[').rstrip(']').split(";")]
                         else:
                             center = [0,0,0]
                         structures.append(build_sphere_contours(z[0,0,:], name, radius, center, interpreted_type))
                     elif shape == 'box':
-                        name = structure.split(",")[1]
-                        size = structure.split(",",2)[2]
+                        name = structure[1]
+                        size = structure[2]
                         if size.startswith("["):
-                            size = structure.split(",", 2)[2]
-                            rest = size[size.find(']')+2:]
-                            size = size[:size.find(']')+1]
-                            size = [float(x) for x in size.lstrip('[').rstrip(']').split(",")]
+                            size = [float(c) for c in size.lstrip('[').rstrip(']').split(";")]
                         else:
-                            size = float(structure.split(",")[2])
-                            rest = structure.split(",",3)[3]
-                        interpreted_type = rest.split(",")[0]
-                        if len(rest.split(",")) >= 2:
-                            center = rest.split(",",1)[1]
-                            center = [float(x) for x in center.lstrip('[').rstrip(']').split(",")]
+                            size = float(size)
+                        interpreted_type = structure[3]
+                        if len(structure) > 4:
+                            center = [float(c) for c in structure[4].lstrip('[').rstrip(']').split(";")]
                         else:
                             center = [0,0,0]
                         structures.append(build_box_contours(z[0,0,:], name, size, center, interpreted_type))
