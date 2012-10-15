@@ -80,7 +80,7 @@ def get_default_rt_structure_set_dataset(current_study):
     get_rt_roi_observations_module(ds)
     return ds
 
-def get_default_rt_plan_dataset(current_study):
+def get_default_rt_plan_dataset(current_study, numbeams):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     sopinstanceuid = generate_uid()
@@ -97,7 +97,7 @@ def get_default_rt_plan_dataset(current_study):
     #get_rt_tolerance_tables(ds)
     if 'PatientPosition' in current_study:
         get_rt_patient_setup_module(ds, current_study)
-    get_rt_beams_module(ds, 3, [10,40,10], [10,5,10], current_study)
+    get_rt_beams_module(ds, numbeams, [10,40,10], [10,5,10], current_study)
     get_rt_fraction_scheme_module(ds, 30)
     #get_approval_module(ds)
     return ds
@@ -467,15 +467,14 @@ def conform_jaws_to_mlc(beam):
                 max_open_leafi = nmax(i for i in range(nleaves)
                                       if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
                 if min_open_leafi != None and max_open_leafi != None:
-                    bldp['ASYMY'].LeafJawPositions = [bld['MLCX'].LeafPositionBoundaries[min_open_leafi].quantize(Decimal("0.01")),
-                                                      bld['MLCX'].LeafPositionBoundaries[max_open_leafi + 1].quantize(Decimal("0.01"))]
+                    bldp['ASYMY'].LeafJawPositions = [bld['MLCX'].LeafPositionBoundaries[min_open_leafi],
+                                                      bld['MLCX'].LeafPositionBoundaries[max_open_leafi + 1]]
             if bldp['MLCX'] != None and bldp['ASYMX'] != None:
                 min_open_leaf = min(bldp['MLCX'].LeafJawPositions[i] for i in range(nleaves)
                                     if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
                 max_open_leaf = max(bldp['MLCX'].LeafJawPositions[i+nleaves] for i in range(nleaves)
                                     if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
-                bldp['ASYMX'].LeafJawPositions = [min_open_leaf.quantize(Decimal("0.01")),
-                                                  max_open_leaf.quantize(Decimal("0.01"))]
+                bldp['ASYMX'].LeafJawPositions = [min_open_leaf, max_open_leaf]
 
 def conform_mlc_to_circle(beam, radius, center):
     bld = getblds(beam.BeamLimitingDeviceSequence)
@@ -484,10 +483,50 @@ def conform_mlc_to_circle(beam, radius, center):
         if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
             bldp = getblds(cp.BeamLimitingDevicePositionSequence)
             for i in range(nleaves):
-                y = (bld['MLCX'].LeafPositionBoundaries[i] + bld['MLCX'].LeafPositionBoundaries[i+1]) / 2
+                y = float((bld['MLCX'].LeafPositionBoundaries[i] + bld['MLCX'].LeafPositionBoundaries[i+1]) / 2)
                 if abs(y) < radius:
-                    bldp['MLCX'].LeafJawPositions[i] = -np.sqrt(radius**2 - y**2)
-                    bldp['MLCX'].LeafJawPositions[i + nleaves] = np.sqrt(radius**2 - y**2)
+                    bldp['MLCX'].LeafJawPositions[i] = Decimal(-np.sqrt(radius**2 - (y-center[1])**2) + center[0]).quantize(Decimal("0.01"))
+                    bldp['MLCX'].LeafJawPositions[i + nleaves] = Decimal(np.sqrt(radius**2 - (y-center[1])**2) + center[0]).quantize(Decimal("0.01"))
+
+def conform_mlc_to_rectangular_field(beam, x, y, center):
+    """Sets MLC to open at least x * y cm"""
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+    for cp in beam.ControlPointSequence:
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+            for i in range(nleaves):
+                if bld['MLCX'].LeafPositionBoundaries[i+1] > (center[1]-y/2.0) and bld['MLCX'].LeafPositionBoundaries[i] < (center[1]+y/2.0):
+                    bldp['MLCX'].LeafJawPositions[i] = Decimal(center[0] - x/2.0)
+                    bldp['MLCX'].LeafJawPositions[i + nleaves] = Decimal(center[0] + x/2.0)
+
+#def conform_mlc_to_roi(beam, roi, current_study):
+#    for contour in roi.ContourSequence:
+#        for i in range(0, len(contour.ContourData) - 3, 3):
+#            pass
+
+def open_mlc_for_line_segment(lpb, lp, v1, v2):
+    if v1[1] > v2[1]:
+        v1,v2 = v2,v1
+    # line segment outside in y?
+    if v2[1] < lpb[0] or v1[1] > lpb[-1]:
+        return
+    nleaves = len(lpb)-1
+    for i in range(0,nleaves):
+        if lpb[i+1] < v1[1]:
+            continue
+        if lpb[i] > v2[1]:
+            break
+        if v1[1] < lpb[i]:
+            xstart = v1[0] + (v2[0]-v1[0]) * (lpb[i]-v1[1])/(v2[1]-v1[1])
+        else:
+            xstart = v1[0]
+        if v2[1] > lpb[i+1]:
+            xend = v2[0] - (v1[0]-v2[0]) * (lpb[i+1]-v2[1])/(v1[1]-v2[1])
+        else:
+            xend = v2[0]
+        lp[i] = min(lp[i], xstart, xend)
+        lp[i+nleaves] = max(lp[i+nleaves], xstart, xend)
 
 def get_structure_set_module(ds, DT, TM, current_study):
     ds.StructureSetLabel = "Structure Set" # T1
@@ -606,11 +645,11 @@ def get_current_study_uid(prop, current_study):
     return current_study[prop]
 
 
-def build_rt_plan(current_study, **kwargs):
+def build_rt_plan(current_study, numbeams, **kwargs):
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    rp = get_default_rt_plan_dataset(current_study)
+    rp = get_default_rt_plan_dataset(current_study, numbeams)
     rp.SeriesInstanceUID = seriesuid
     rp.StudyInstanceUID = studyuid
     rp.FrameofReferenceUID = FoRuid
@@ -773,6 +812,13 @@ if __name__ == '__main__':
     parser.add_argument('--structure', dest='structures', default=[], action='append',
                         help="""Add a structure to the current list of structure sets.
                         For syntax, see the forthcoming documentation or the source code...""")
+    parser.add_argument('--beams', dest='beams', default=3, 
+                        help="""Set the number of equidistant beams to write in an RTPLAN.""")
+    parser.add_argument('--mlc-shape', dest='mlcshapes', default=[], action='append',
+                        help="""Add an opening to the current list of mlc openings.
+                        For syntax, see the forthcoming documentation or the source code...""")
+    parser.add_argument('--jaw-shape', dest='jawshape', default=None,
+                        help="""Sets the jaw shape to x * y, centered at (xc, yc). Given as [x;y;xc;yc]. Defaults to conforming to the MLC.""")
     parser.add_argument('--outdir', dest='outdir', default='.',
                         help="""Generate data to this directory. (default: working directory)""")
     
@@ -857,10 +903,23 @@ if __name__ == '__main__':
                 current_study['RTDOSE'] = rd
                 dicom.write_file(os.path.join(args.outdir, rd.filename), rd)
             elif series.modality == "RTPLAN":
-                rp = build_rt_plan(current_study = current_study)
+                rp = build_rt_plan(current_study = current_study, numbeams = int(series.beams))
                 for beam in rp.BeamSequence:
-                    conform_mlc_to_circle(beam, 30, [0,0])
-                    conform_jaws_to_mlc(beam)
+                    for mlcshape in series.mlcshapes:
+                        mlcshape = mlcshape.split(",")
+                        if mlcshape[0] == "circle":
+                            radius = float(mlcshape[1])
+                            center = [float(c) for c in mlcshape[2].lstrip('[').rstrip(']').split(";")]
+                            conform_mlc_to_circle(beam, radius, center)
+                        elif mlcshape[0] == "rectangle":
+                            X,Y = float(mlcshape[1]),float(mlcshape[2])
+                            center = [float(c) for c in mlcshape[3].lstrip('[').rstrip(']').split(";")]
+                            conform_mlc_to_rectangular_field(beam, X, Y, center)
+                    if series.jawshape == None:
+                        conform_jaws_to_mlc(beam)
+                    else:
+                        series.jawshape = [float(c) for c in series.jawshape.lstrip('[').rstrip(']').split(";")]
+                        conform_jaws_to_rectangular_field(series.jawshape[0], series.jawshape[1], (series.jawshape[2], series.jawshape[3]))
                 current_study['RTPLAN'] = rp
                 dicom.write_file(os.path.join(args.outdir, rp.filename), rp)
             elif series.modality == "RTSTRUCT":
