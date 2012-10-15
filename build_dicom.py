@@ -793,8 +793,6 @@ if __name__ == '__main__':
 
     def build_box_contours(z, name, size, center, interpreted_type):
         #print "build_box_contours", z, name, size, center, interpreted_type
-        if not hasattr(size, '__len__'):
-            size = [size] * 3
         contours = np.array([[[X*size[0]/2 + center[0],
                                Y*X*size[1]/2 + center[1],
                                Z]
@@ -823,7 +821,19 @@ if __name__ == '__main__':
                         else:
                             center = [0,0,0]
                         ctData[(x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2] = val
-                    if shape == "lightfield":
+                    elif shape == "box":
+                        val = float(value[1])
+                        size = value[2]
+                        if size.startswith("[") and size.endswith("]"):
+                            size = [float(c) for c in size.lstrip('[').rstrip(']').split(";")]
+                        else:
+                            size = [float(size),float(size),float(size)]
+                        if len(value) > 3:
+                            center = [float(c) for c in value[3].lstrip('[').rstrip(']').split(";")]
+                        else:
+                            center = [0,0,0]
+                        ctData[(abs(x-center[0]) <= size[0]/2.0) * (abs(y-center[1]) <= size[1]/2.0) * (abs(z-center[2]) <= size[2]/2.0)] = val
+                    elif shape == "lightfield":
                         add_lightfield(ctData, current_study['RTPLAN'], x, y, z)
 
             if series.patient_position != None:
@@ -865,10 +875,10 @@ if __name__ == '__main__':
                     elif shape == 'box':
                         name = structure[1]
                         size = structure[2]
-                        if size.startswith("["):
+                        if size.startswith("[") and size.endswith("]"):
                             size = [float(c) for c in size.lstrip('[').rstrip(']').split(";")]
                         else:
-                            size = float(size)
+                            size = [float(size),float(size),float(size)]
                         interpreted_type = structure[3]
                         if len(structure) > 4:
                             center = [float(c) for c in structure[4].lstrip('[').rstrip(']').split(";")]
