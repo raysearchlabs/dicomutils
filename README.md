@@ -37,7 +37,7 @@ $ /build_dicom.py \
       --structure external \
         --structure "sphere,Ball,25,CAVITY,[50;86.6;0]" \
         --structure "sphere,Ball2,25,CAVITY,[50;-86.6;0]" --modality RTSTRUCT \
-      --beams 3 --mlc-shape "rectangle,100,150" --jaw-shape "110,160" \
+      --beams 3 --mlc-shape "circle,25" --jaw-shape "60,60" \
         --nominal-energy 6 --modality RTPLAN \
       --values 0 --values lightfield --modality RTDOSE
 ```
