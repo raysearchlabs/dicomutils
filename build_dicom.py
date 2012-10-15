@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import dicom, time, uuid, sys, datetime
+import dicom, time, uuid, sys, datetime, os
 import coordinates
 
 # Be careful to pass good fp numbers...
@@ -773,12 +773,17 @@ if __name__ == '__main__':
     parser.add_argument('--structure', dest='structures', default=[], action='append',
                         help="""Add a structure to the current list of structure sets.
                         For syntax, see the forthcoming documentation or the source code...""")
+    parser.add_argument('--outdir', dest='outdir', default='.',
+                        help="""Generate data to this directory. (default: working directory)""")
     
     args = parser.parse_args(namespace = argparse.Namespace(studies=[[]]))
 
     voxelGrid = [float(x) for x in args.VoxelSize.split(",")]
     nVoxels = [int(x) for x in args.Voxels.split(",")]
     x,y,z = get_centered_coordinates(voxelGrid, nVoxels)
+
+    if not os.path.exists(args.outdir):
+        os.makedirs(args.outdir)
     
     def build_sphere_contours(z, name, radius, center, interpreted_type, ntheta = 32):
         #print "build_sphere_contours", z, name, radius, center, interpreted_type, ntheta
@@ -846,18 +851,18 @@ if __name__ == '__main__':
                 datasets = build_ct(ctData, voxelGrid, current_study = current_study)
                 current_study['CT'] = datasets
                 for ds in datasets:
-                    dicom.write_file(ds.filename, ds)
+                    dicom.write_file(os.path.join(args.outdir, ds.filename), ds)
             elif series.modality == "RTDOSE":
                 rd = build_rt_dose(ctData, voxelGrid, current_study = current_study)
                 current_study['RTDOSE'] = rd
-                dicom.write_file(rd.filename, rd)
+                dicom.write_file(os.path.join(args.outdir, rd.filename), rd)
             elif series.modality == "RTPLAN":
                 rp = build_rt_plan(current_study = current_study)
                 for beam in rp.BeamSequence:
                     conform_mlc_to_circle(beam, 30, [0,0])
                     conform_jaws_to_mlc(beam)
                 current_study['RTPLAN'] = rp
-                dicom.write_file(rp.filename, rp)
+                dicom.write_file(os.path.join(args.outdir, rp.filename), rp)
             elif series.modality == "RTSTRUCT":
                 structures = []
                 for structure in series.structures:
@@ -893,4 +898,4 @@ if __name__ == '__main__':
                     
                 rs = build_rt_structure_set(structures, current_study = current_study)
                 current_study['RTSTRUCT'] = rs
-                dicom.write_file(rs.filename, rs)
+                dicom.write_file(os.path.join(args.outdir, rs.filename), rs)
