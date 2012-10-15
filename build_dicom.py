@@ -722,7 +722,7 @@ def add_lightfield(ctData, rtplan, x, y, z):
         beamLimitingDeviceAngle = Decimal(0)
         for cp in beam.ControlPointSequence:
             if hasattr(cp, 'GantryAngle'):
-                gantryAngle = cp.GantryAngle + Decimal("120")
+                gantryAngle = cp.GantryAngle
             if hasattr(cp, 'BeamLimitingDeviceAngle'):
                 blda = cp.BeamLimitingDeviceAngle
             if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
@@ -733,14 +733,14 @@ def add_lightfield(ctData, rtplan, x, y, z):
             c2 = np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
             nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
             for i in range(nleaves):
-                ctData.ravel()[(c2[0,:] > max(float(bldp['ASYMX'].LeafJawPositions[0]),
-                                              float(bld['MLCX'].LeafPositionBoundaries[i])))
+                ctData.ravel()[(c2[0,:] >= max(float(bldp['ASYMX'].LeafJawPositions[0]),
+                                              float(bldp['MLCX'].LeafJawPositions[i])))
                                * (c2[0,:] <= min(float(bldp['ASYMX'].LeafJawPositions[1]),
-                                                 float(bld['MLCX'].LeafPositionBoundaries[i+1])))
-                               * (c2[1,:] >= max(float(bldp['ASYMY'].LeafJawPositions[0]),
-                                                 float(bldp['MLCX'].LeafJawPositions[i])))
+                                                 float(bldp['MLCX'].LeafJawPositions[i + nleaves])))
+                               * (c2[1,:] > max(float(bldp['ASYMY'].LeafJawPositions[0]),
+                                                 float(bld['MLCX'].LeafPositionBoundaries[i])))
                                * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
-                                                 float(bldp['MLCX'].LeafJawPositions[i + nleaves])))] += 1
+                                                 float(bld['MLCX'].LeafPositionBoundaries[i+1])))] += 1
 
 if __name__ == '__main__':
     import argparse
