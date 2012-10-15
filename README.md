@@ -30,14 +30,15 @@ Generate CT data with two cavities (one denser), rois covering them, a box outli
 and a lightfield "dose":
 
 ```bash
-$ ./build_dicom.py 
+$ /build_dicom.py \
       --patient-position HFS --values 1024 \
         --values "sphere,0,25,[50;86.6;0]" --values "sphere,2024,25,[50;-86.6;0]" \
         --voxelsize 4,4,4 --voxels 50,50,50 --modality CT \
       --structure external \
         --structure "sphere,Ball,25,CAVITY,[50;86.6;0]" \
         --structure "sphere,Ball2,25,CAVITY,[50;-86.6;0]" --modality RTSTRUCT \
-      --nominal-energy 6 --modality RTPLAN \
+      --beams 3 --mlc-shape "rectangle,100,150" --jaw-shape "110,160" \
+        --nominal-energy 6 --modality RTPLAN \
       --values 0 --values lightfield --modality RTDOSE
 ```
 
