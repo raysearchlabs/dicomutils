@@ -500,6 +500,18 @@ def conform_mlc_to_rectangular_field(beam, x, y, center):
                     bldp['MLCX'].LeafJawPositions[i] = Decimal(center[0] - x/2.0)
                     bldp['MLCX'].LeafJawPositions[i + nleaves] = Decimal(center[0] + x/2.0)
 
+def conform_jaws_to_rectangular_field(beam, x, y, center):
+    """Sets jaws opening to x * y cm, centered at `center`"""
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+    for cp in beam.ControlPointSequence:
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+            bldp['ASYMX'].LeafJawPositions = [Decimal(center[0] - x/2.0),
+                                              Decimal(center[0] + x/2.0)]
+            bldp['ASYMY'].LeafJawPositions = [Decimal(center[1] - y/2.0),
+                                              Decimal(center[1] + y/2.0)]
+
 #def conform_mlc_to_roi(beam, roi, current_study):
 #    for contour in roi.ContourSequence:
 #        for i in range(0, len(contour.ContourData) - 3, 3):
@@ -909,17 +921,28 @@ if __name__ == '__main__':
                         mlcshape = mlcshape.split(",")
                         if mlcshape[0] == "circle":
                             radius = float(mlcshape[1])
-                            center = [float(c) for c in mlcshape[2].lstrip('[').rstrip(']').split(";")]
+                            if len(mlcshape) > 2:
+                                center = [float(c) for c in mlcshape[2].lstrip('[').rstrip(']').split(";")]
+                            else:
+                                center = [0,0]
                             conform_mlc_to_circle(beam, radius, center)
                         elif mlcshape[0] == "rectangle":
                             X,Y = float(mlcshape[1]),float(mlcshape[2])
-                            center = [float(c) for c in mlcshape[3].lstrip('[').rstrip(']').split(";")]
+                            if len(mlcshape) > 3:
+                                center = [float(c) for c in mlcshape[3].lstrip('[').rstrip(']').split(";")]
+                            else:
+                                center = [0,0]
                             conform_mlc_to_rectangular_field(beam, X, Y, center)
                     if series.jawshape == None:
                         conform_jaws_to_mlc(beam)
                     else:
-                        series.jawshape = [float(c) for c in series.jawshape.lstrip('[').rstrip(']').split(";")]
-                        conform_jaws_to_rectangular_field(series.jawshape[0], series.jawshape[1], (series.jawshape[2], series.jawshape[3]))
+                        jawshape = series.jawshape.split(",")
+                        jawsize = (float(jawshape[0]), float(jawshape[1]))
+                        if len(jawshape) > 2:
+                            center = [float(c) for c in jawshape[2].lstrip('[').rstrip(']').split(";")]
+                        else:
+                            center = [0,0]
+                        conform_jaws_to_rectangular_field(beam, jawsize[0], jawsize[1], center)
                 current_study['RTPLAN'] = rp
                 dicom.write_file(os.path.join(args.outdir, rp.filename), rp)
             elif series.modality == "RTSTRUCT":
