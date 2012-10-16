@@ -57,7 +57,7 @@ def Met(Tx, Ty, Tz, psi_t):
     return rotX(psi_t) * translate(-Tx, -Ty, -Tz)
 def Mtp(Px, Py, Pz, psi_p, phi_p, theta_p):
     """Transform from table top to patient coordinate system."""
-    return rotZ(theta_p) * rotY(phi_p) * rotZ(psi_p) * translate(-Px, -Py, -Pz)
+    return rotZ(theta_p) * rotY(-phi_p) * rotX(psi_p) * translate(-Px, -Py, -Pz)
 def Mfg(phi_g):
     """Transform from fixed to gantry coordinate system."""
     return rotY(-phi_g)

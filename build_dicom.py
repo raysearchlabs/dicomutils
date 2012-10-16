@@ -756,19 +756,28 @@ def get_centered_coordinates(voxelGrid, nVoxels):
     z=(z-(nVoxels[2]-1)/2.0)*voxelGrid[2]
     return x,y,z
 
-def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAngle):
+def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAngle, patientPosition):
+    if patientPosition == 'HFS':
+        psi_p, phi_p, theta_p = 0,0,0
+    elif patientPosition == 'HFP':
+        psi_p, phi_p, theta_p = 0,180,0
+    elif patientPosition == 'FFS':
+        psi_p, phi_p, theta_p = 0,0,180
+    elif patientPosition == 'FFP':
+        psi_p, phi_p, theta_p = 180,0,0
+        
     M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
          * coordinates.Mfg(gantryAngle)
          * np.linalg.inv(coordinates.Mfs(0))
          * np.linalg.inv(coordinates.Mse(0,0))
          * np.linalg.inv(coordinates.Met(0,0,0,0))
-         * np.linalg.inv(coordinates.Mtp(0,0,0,0,0,0))
+         * np.linalg.inv(coordinates.Mtp(0, 0, 0, psi_p, phi_p, theta_p))
          * np.linalg.inv(coordinates.Mpd()))
     return M
 
 def add_lightfield(ctData, rtplan, x, y, z):
     # TODO: This only considers gantry rotation and BeamLimitingDeviceAngle -
-    #       not patient orientation, isocenter position, table tilts etc.
+    #       not isocenter position, table tilts & shifts etc.
     for beam in rtplan.BeamSequence:
         bld = getblds(beam.BeamLimitingDeviceSequence)
         gantryAngle = None
@@ -780,7 +789,7 @@ def add_lightfield(ctData, rtplan, x, y, z):
                 blda = cp.BeamLimitingDeviceAngle
             if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
                 bldp = getblds(cp.BeamLimitingDevicePositionSequence)
-            Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle)
+            Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle, current_study['PatientPosition'])
             coords = np.array([x.ravel(),y.ravel(),z.ravel(),np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
             c = Mdb * coords
             c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
