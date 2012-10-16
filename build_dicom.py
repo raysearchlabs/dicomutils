@@ -341,8 +341,10 @@ def get_rt_patient_setup_module(ds, current_study):
 def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, current_study):
     """nleaves is a list [na, nb, nc, ...] and leafwidths is a list [wa, wb, wc, ...]
     so that there are na leaves with width wa followed by nb leaves with width wb etc."""
-    ds.BeamSequence = [dicom.dataset.Dataset() for k in range(nbeams)]
-    for i in range(nbeams):
+    if isinstance(nbeams, int):
+        nbeams = [i * 360 / nbeams for i in range(nbeams)]
+    ds.BeamSequence = [dicom.dataset.Dataset() for gantryAngle in nbeams]
+    for i, gantryAngle in enumerate(nbeams):
         beam = ds.BeamSequence[i]
         beam.BeamNumber = i + 1
         beam.BeamName = "B{0}".format(i+1) # T3
@@ -404,7 +406,7 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, current_study):
                 cp.BeamLimitingDevicePositionSequence[1].LeafJawPositions = [0,0]
                 cp.BeamLimitingDevicePositionSequence[2].RTBeamLimitingDeviceType = 'MLCX'
                 cp.BeamLimitingDevicePositionSequence[2].LeafJawPositions = [0,0]*sum(nleaves)
-                cp.GantryAngle = i * 360 / nbeams
+                cp.GantryAngle = gantryAngle
                 cp.GantryRotationDirection = 'NONE'
                 if 'NominalEnergy' in current_study:
                     cp.NominalBeamEnergy = current_study['NominalEnergy']
@@ -781,7 +783,7 @@ def add_lightfield(ctData, rtplan, x, y, z):
             Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle)
             coords = np.array([x.ravel(),y.ravel(),z.ravel(),np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
             c = Mdb * coords
-            c2 = np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
+            c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
             nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
             for i in range(nleaves):
                 ctData.ravel()[(c2[0,:] >= max(float(bldp['ASYMX'].LeafJawPositions[0]),
@@ -824,12 +826,12 @@ if __name__ == '__main__':
     parser.add_argument('--structure', dest='structures', default=[], action='append',
                         help="""Add a structure to the current list of structure sets.
                         For syntax, see the forthcoming documentation or the source code...""")
-    parser.add_argument('--beams', dest='beams', default=3, 
+    parser.add_argument('--beams', dest='beams', default='3', 
                         help="""Set the number of equidistant beams to write in an RTPLAN.""")
     parser.add_argument('--mlc-shape', dest='mlcshapes', default=[], action='append',
                         help="""Add an opening to the current list of mlc openings.
                         For syntax, see the forthcoming documentation or the source code...""")
-    parser.add_argument('--jaw-shape', dest='jawshape', default=None,
+    parser.add_argument('--jaw-shape', dest='jawshapes', default=[], action='append',
                         help="""Sets the jaw shape to x * y, centered at (xc, yc). Given as [x;y;xc;yc]. Defaults to conforming to the MLC.""")
     parser.add_argument('--outdir', dest='outdir', default='.',
                         help="""Generate data to this directory. (default: working directory)""")
@@ -915,33 +917,51 @@ if __name__ == '__main__':
                 current_study['RTDOSE'] = rd
                 dicom.write_file(os.path.join(args.outdir, rd.filename), rd)
             elif series.modality == "RTPLAN":
-                rp = build_rt_plan(current_study = current_study, numbeams = int(series.beams))
-                for beam in rp.BeamSequence:
-                    for mlcshape in series.mlcshapes:
-                        mlcshape = mlcshape.split(",")
-                        if mlcshape[0] == "circle":
-                            radius = float(mlcshape[1])
-                            if len(mlcshape) > 2:
-                                center = [float(c) for c in mlcshape[2].lstrip('[').rstrip(']').split(";")]
-                            else:
-                                center = [0,0]
-                            conform_mlc_to_circle(beam, radius, center)
-                        elif mlcshape[0] == "rectangle":
-                            X,Y = float(mlcshape[1]),float(mlcshape[2])
-                            if len(mlcshape) > 3:
-                                center = [float(c) for c in mlcshape[3].lstrip('[').rstrip(']').split(";")]
-                            else:
-                                center = [0,0]
-                            conform_mlc_to_rectangular_field(beam, X, Y, center)
-                    if series.jawshape == None:
-                        conform_jaws_to_mlc(beam)
+                if all(d.isdigit() for d in series.beams):
+                    beams = int(series.beams)
+                else:
+                    beams = [int(b) for b in series.beams.split(",")]
+                rp = build_rt_plan(current_study = current_study, numbeams = beams)
+                for mlcshape in series.mlcshapes:
+                    mlcshape = mlcshape.split(",")
+                    if all(d.isdigit() for d in mlcshape[0]):
+                        beams = [rp.BeamSequence[int(mlcshape[0])-1]]
+                        mlcshape=mlcshape[1:]
                     else:
-                        jawshape = series.jawshape.split(",")
-                        jawsize = (float(jawshape[0]), float(jawshape[1]))
-                        if len(jawshape) > 2:
-                            center = [float(c) for c in jawshape[2].lstrip('[').rstrip(']').split(";")]
+                        beams = rp.BeamSequence
+
+                    if mlcshape[0] == "circle":
+                        radius = float(mlcshape[1])
+                        if len(mlcshape) > 2:
+                            center = [float(c) for c in mlcshape[2].lstrip('[').rstrip(']').split(";")]
                         else:
                             center = [0,0]
+                        for beam in beams:
+                            conform_mlc_to_circle(beam, radius, center)
+                    elif mlcshape[0] == "rectangle":
+                        X,Y = float(mlcshape[1]),float(mlcshape[2])
+                        if len(mlcshape) > 3:
+                            center = [float(c) for c in mlcshape[3].lstrip('[').rstrip(']').split(";")]
+                        else:
+                            center = [0,0]
+                        for beam in beams:
+                            conform_mlc_to_rectangular_field(beam, X, Y, center)
+                for beam in beams:
+                    conform_jaws_to_mlc(beam)
+
+                for jawshape in series.jawshapes:
+                    jawshape = jawshape.split(",")
+                    if len(jawshape) == 2:
+                        beams = [rp.BeamSequence[int(jawshape[0])-1]]
+                        jawshape=jawshape[1:]
+                    else:
+                        beams = rp.BeamSequence
+                    jawsize = [float(c) for c in jawshape[0].lstrip('[').rstrip(']').split(";")]
+                    if len(jawsize) > 2:
+                        center = [jawsize[2],jawsize[3]]
+                    else:
+                        center = [0,0]
+                    for beam in beams:
                         conform_jaws_to_rectangular_field(beam, jawsize[0], jawsize[1], center)
                 current_study['RTPLAN'] = rp
                 dicom.write_file(os.path.join(args.outdir, rp.filename), rp)

@@ -1,27 +1,36 @@
 import numpy as np
-from math import sin, cos, pi
-#from sympy import sin, cos, pi
+debug = False
+
+if not debug:
+    from math import sin, cos, pi
+    def n(x):
+        return float(x)
+else:    
+    from sympy import sin, cos, pi, Symbol
+    tg, tb, tw, ts, te, Ey, Ty, Bz, Wz = [Symbol(s) for s in ['tg', 'tb', 'tw', 'ts', 'te', 'Ey', 'Ty', 'Bz', 'Wz']]
+    def n(x):
+        return x
 
 def rotX(psi):
     return np.matrix([[1, 0, 0, 0],
-                      [0, cos(float(psi)*pi/180), sin(float(psi)*pi/180), 0],
-                      [0, -sin(float(psi)*pi/180), cos(float(psi)*pi/180), 0],
+                      [0, cos(n(psi)*pi/180), sin(n(psi)*pi/180), 0],
+                      [0, -sin(n(psi)*pi/180), cos(n(psi)*pi/180), 0],
                       [0, 0, 0, 1]])
 def rotY(phi):
-    return np.matrix([[cos(float(phi)*pi/180), 0, sin(float(phi)*pi/180), 0],
+    return np.matrix([[cos(n(phi)*pi/180), 0, sin(n(phi)*pi/180), 0],
                       [0, 1, 0, 0],
-                      [-sin(float(phi)*pi/180), 0, cos(float(phi)*pi/180), 0],
+                      [-sin(n(phi)*pi/180), 0, cos(n(phi)*pi/180), 0],
                       [0, 0, 0, 1]])
 def rotZ(theta):
-    return np.matrix([[cos(float(theta)*pi/180), sin(float(theta)*pi/180), 0, 0],
-                      [-sin(float(theta)*pi/180), cos(float(theta)*pi/180), 0, 0],
+    return np.matrix([[cos(n(theta)*pi/180), sin(n(theta)*pi/180), 0, 0],
+                      [-sin(n(theta)*pi/180), cos(n(theta)*pi/180), 0, 0],
                       [0, 0, 1, 0],
                       [0, 0, 0, 1]])
 
 def translate(x,y,z):
-    return np.matrix([[1,0,0,float(x)],
-                      [0,1,0,float(y)],
-                      [0,0,1,float(z)],
+    return np.matrix([[1,0,0,n(x)],
+                      [0,1,0,n(y)],
+                      [0,0,1,n(z)],
                       [0,0,0,1]])
 
 def invert4x4fast(m):
@@ -51,7 +60,7 @@ def Mtp(Px, Py, Pz, psi_p, phi_p, theta_p):
     return rotZ(theta_p) * rotY(phi_p) * rotZ(psi_p) * translate(-Px, -Py, -Pz)
 def Mfg(phi_g):
     """Transform from fixed to gantry coordinate system."""
-    return rotY(phi_g)
+    return rotY(-phi_g)
 def Mgb(SAD, theta_b):
     """Transform from gantry to beam limiting device or delineator coordinate system."""
     return rotZ(theta_b) * translate(0, 0, -SAD)
