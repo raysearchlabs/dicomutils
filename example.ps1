@@ -5,7 +5,7 @@ C:\Python27\python.exe build_dicom.py `
       --structure external `
         --structure "sphere,Ball,25,CAVITY,[50;86.6;0]" `
         --structure "box,Cube,25,CAVITY,[50;-86.6;0]" --modality RTSTRUCT `
-      --beams "3,123,270" `
+      --beams "[3;123;270]" `
         --mlc-shape "1,circle,30" --jaw-shape "1,[60;60]" `
         --mlc-shape "2,rectangle,60,60,[0;40]" --jaw-shape "2,[70;70;10;10]" `
         --mlc-shape "3,rectangle,40,80" --jaw-shape "3,[40;80]" `

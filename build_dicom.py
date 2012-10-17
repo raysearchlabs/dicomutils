@@ -780,7 +780,7 @@ def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAn
          * coordinates.Mfg(gantryAngle)
          * np.linalg.inv(coordinates.Mfs(0))
          * np.linalg.inv(coordinates.Mse(0,0))
-         * np.linalg.inv(coordinates.Met(0,0,0,0))
+         * np.linalg.inv(coordinates.Met(0,0,0,0,0))
          * np.linalg.inv(coordinates.Mtp(0, 0, 0, psi_p, phi_p, theta_p))
          * np.linalg.inv(coordinates.Mpd()))
     return M
@@ -952,7 +952,7 @@ if __name__ == '__main__':
                 if all(d.isdigit() for d in series.beams):
                     beams = int(series.beams)
                 else:
-                    beams = [int(b) for b in series.beams.split(",")]
+                    beams = [int(b) for b in series.beams.lstrip('[').rstrip(']').split(";")]
                 rp = build_rt_plan(current_study = current_study, numbeams = beams)
                 for mlcshape in series.mlcshapes:
                     mlcshape = mlcshape.split(",")
