@@ -36,7 +36,7 @@ def get_default_ct_dataset(sopinstanceuid):
     get_sop_common_module(ds, DT, TM, "CT Image Storage", sopinstanceuid)
     get_ct_image_module(ds)
     get_image_pixel_macro(ds)
-    get_patient_module(ds)
+    get_patient_module(ds, current_study)
     get_general_study_module(ds, DT, TM)
     get_general_series_module(ds, DT, TM, "CT")
     get_frame_of_reference_module(ds)
@@ -52,7 +52,7 @@ def get_default_rt_dose_dataset(current_study):
     filename = "RTDOSE_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "RT Dose Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Dose Storage", sopinstanceuid)
-    get_patient_module(ds)
+    get_patient_module(ds, current_study)
     get_image_pixel_macro(ds)
     get_general_study_module(ds, DT, TM)
     get_rt_series_module(ds, DT, TM, "RTDOSE")
@@ -71,7 +71,7 @@ def get_default_rt_structure_set_dataset(current_study):
     filename = "RTSTRUCT_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "RT Structure Set Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Structure Set Storage", sopinstanceuid)
-    get_patient_module(ds)
+    get_patient_module(ds, current_study)
     get_general_study_module(ds, DT, TM)
     get_rt_series_module(ds, DT, TM, "RTSTRUCT")
     get_general_equipment_module(ds)
@@ -87,7 +87,7 @@ def get_default_rt_plan_dataset(current_study, numbeams):
     filename = "RTPLAN_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "RT Plan Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Plan Storage", sopinstanceuid)
-    get_patient_module(ds)
+    get_patient_module(ds, current_study)
     get_general_study_module(ds, DT, TM)
     get_rt_series_module(ds, DT, TM, "RTPLAN")
     get_frame_of_reference_module(ds)
@@ -130,11 +130,11 @@ def get_image_pixel_macro(ds):
     ds.Columns = 256
     ds.PixelRepresentation = 0
 
-def get_patient_module(ds):
+def get_patient_module(ds, current_study):
     # Type 2
-    ds.PatientsName = ""
-    ds.PatientID = "Patient's ID"
-    ds.PatientsBirthDate = ""
+    ds.PatientsName = current_study['PatientsName']
+    ds.PatientID = current_study['PatientID']
+    ds.PatientsBirthDate = current_study['PatientsBirthDate']
     ds.PatientsSex = "O"
 
 def get_general_study_module(ds, DT, TM):
@@ -765,6 +765,16 @@ def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAn
         psi_p, phi_p, theta_p = 0,0,180
     elif patientPosition == 'FFP':
         psi_p, phi_p, theta_p = 180,0,0
+    elif patientPosition == 'HFDL':
+        psi_p, phi_p, theta_p = 0,90,0
+    elif patientPosition == 'HFDR':
+        psi_p, phi_p, theta_p = 0,270,0
+    elif patientPosition == 'FFDL':
+        psi_p, phi_p, theta_p = 180,270,0
+    elif patientPosition == 'FFDR':
+        psi_p, phi_p, theta_p = 180,90,0
+    else:
+        assert False, "Unknown patient position!"
         
     M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
          * coordinates.Mfg(gantryAngle)
@@ -820,6 +830,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create DICOM data.')
     parser.add_argument('--patient-position', dest='patient_position', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDP'],
                         help='The patient position written in the images. Required for CT and MR. (default: not specified)')
+    parser.add_argument('--patient-id', dest='patient_id', default='Patient ID',
+                        help='The patient ID.')
+    parser.add_argument('--patients-name', dest='patients_name', default='Patients Name',
+                        help="The patient's name, in DICOM caret notation.")
+    parser.add_argument('--patients-birthdate', dest='patients_birthdate', default='',
+                        help="The patient's birthdate, in DICOM DA notation (YYYYMMDD).")
     parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
                         help='The size of a single voxel in mm. (default: 1,2,4)')
     parser.add_argument('--voxels', dest='Voxels', default="64,32,16",
@@ -913,6 +929,12 @@ if __name__ == '__main__':
 
             if series.patient_position != None:
                 current_study['PatientPosition'] = series.patient_position
+            if series.patient_id != None:
+                current_study['PatientID'] = series.patient_id
+            if series.patients_name != None:
+                current_study['PatientsName'] = series.patients_name
+            if series.patients_birthdate != None:
+                current_study['PatientsBirthDate'] = series.patients_birthdate
             if series.nominal_energy != None:
                 current_study['NominalEnergy'] = series.nominal_energy
             if series.modality == "CT":
