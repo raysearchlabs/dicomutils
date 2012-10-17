@@ -171,9 +171,6 @@ def get_rt_series_module(ds, DT, TM, modality):
     ds.SeriesNumber = ""
     ds.OperatorsName = ""
 
-    # Type 3
-    ds.SeriesDate = DT
-    ds.SeriesTime = TM
     # ds.SeriesDescriptionCodeSequence = None
     # ds.ReferencedPerformedProcedureStepSequence = None
     # ds.RequestAttributesSequence = None
@@ -556,7 +553,6 @@ def get_structure_set_module(ds, DT, TM, current_study):
     if 'CT' in current_study and len(current_study['CT']) > 0:
         reffor = dicom.dataset.Dataset()
         reffor.FrameofReferenceUID = get_current_study_uid('FrameofReferenceUID', current_study)
-        reffor.RelatedFrameofReferenceUID = [] # T3
         refstudy = dicom.dataset.Dataset()
         refstudy.ReferencedSOPClassUID = get_uid("Detached Study Management SOP Class") # T1, but completely bogus.
         refstudy.ReferencedSOPInstanceUID = get_current_study_uid('StudyUID', current_study) # T1
@@ -694,8 +690,6 @@ def build_rt_dose(doseData, voxelGrid, current_study, **kwargs):
     rd.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
                                -(nVoxels[1]-1)*voxelGrid[1]/2.0,
                                -(nVoxels[2]-1)*voxelGrid[2]/2.0]
-    if 'PatientPosition' in current_study:
-        rd.PatientPosition = current_study['PatientPosition']
     
     rd.PixelData=doseData.tostring(order='F')
     for k, v in kwargs.iteritems():
@@ -716,7 +710,6 @@ def build_rt_structure_set(rois, current_study, **kwargs):
         add_roi_to_rt_roi_observation(rs, structuresetroi, roi['Name'], roi['InterpretedType'])
     rs.SeriesInstanceUID = seriesuid
     rs.StudyInstanceUID = studyuid
-    rs.FrameofReferenceUID = FoRuid
     for k, v in kwargs.iteritems():
         if v != None:
             setattr(rs, k, v)
@@ -838,7 +831,7 @@ if __name__ == '__main__':
                         help='The patient position written in the images. Required for CT and MR. (default: not specified)')
     parser.add_argument('--patient-id', dest='patient_id', default='Patient ID',
                         help='The patient ID.')
-    parser.add_argument('--patients-name', dest='patients_name', default='Patients Name',
+    parser.add_argument('--patients-name', dest='patients_name', default='LastName^GivenName^^^',
                         help="The patient's name, in DICOM caret notation.")
     parser.add_argument('--patients-birthdate', dest='patients_birthdate', default='',
                         help="The patient's birthdate, in DICOM DA notation (YYYYMMDD).")
