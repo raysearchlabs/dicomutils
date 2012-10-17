@@ -798,7 +798,7 @@ def add_lightfield(ctData, rtplan, x, y, z):
             if hasattr(cp, 'GantryAngle'):
                 gantryAngle = cp.GantryAngle
             if hasattr(cp, 'BeamLimitingDeviceAngle'):
-                blda = cp.BeamLimitingDeviceAngle
+                beamLimitingDeviceAngle = cp.BeamLimitingDeviceAngle
             if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
                 bldp = getblds(cp.BeamLimitingDevicePositionSequence)
             Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle, current_study['PatientPosition'])
