@@ -28,16 +28,20 @@ def get_empty_dataset(filename, storagesopclass, sopinstanceuid):
     ds = dicom.dataset.FileDataset(filename, {}, file_meta=file_meta, preamble="\0"*128)
     return ds
 
-def get_default_ct_dataset(sopinstanceuid):
+def get_default_ct_dataset(sopinstanceuid, current_study):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    if 'StudyTime' not in current_study:
+        current_study['StudyTime'] = TM
+    if 'StudyDate' not in current_study:
+        current_study['StudyDate'] = DT
     filename = "CT_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "CT Image Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "CT Image Storage", sopinstanceuid)
     get_ct_image_module(ds)
     get_image_pixel_macro(ds)
     get_patient_module(ds, current_study)
-    get_general_study_module(ds, DT, TM)
+    get_general_study_module(ds, current_study)
     get_general_series_module(ds, DT, TM, "CT")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
@@ -48,13 +52,17 @@ def get_default_ct_dataset(sopinstanceuid):
 def get_default_rt_dose_dataset(current_study):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    if 'StudyTime' not in current_study:
+        current_study['StudyTime'] = TM
+    if 'StudyDate' not in current_study:
+        current_study['StudyDate'] = DT
     sopinstanceuid = generate_uid()
     filename = "RTDOSE_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "RT Dose Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Dose Storage", sopinstanceuid)
     get_patient_module(ds, current_study)
     get_image_pixel_macro(ds)
-    get_general_study_module(ds, DT, TM)
+    get_general_study_module(ds, current_study)
     get_rt_series_module(ds, DT, TM, "RTDOSE")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
@@ -67,12 +75,16 @@ def get_default_rt_dose_dataset(current_study):
 def get_default_rt_structure_set_dataset(current_study):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    if 'StudyTime' not in current_study:
+        current_study['StudyTime'] = TM
+    if 'StudyDate' not in current_study:
+        current_study['StudyDate'] = DT
     sopinstanceuid = generate_uid()
     filename = "RTSTRUCT_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "RT Structure Set Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Structure Set Storage", sopinstanceuid)
     get_patient_module(ds, current_study)
-    get_general_study_module(ds, DT, TM)
+    get_general_study_module(ds, current_study)
     get_rt_series_module(ds, DT, TM, "RTSTRUCT")
     get_general_equipment_module(ds)
     get_structure_set_module(ds, DT, TM, current_study)
@@ -83,12 +95,16 @@ def get_default_rt_structure_set_dataset(current_study):
 def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, couch_angles):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    if 'StudyTime' not in current_study:
+        current_study['StudyTime'] = TM
+    if 'StudyDate' not in current_study:
+        current_study['StudyDate'] = DT
     sopinstanceuid = generate_uid()
     filename = "RTPLAN_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "RT Plan Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Plan Storage", sopinstanceuid)
     get_patient_module(ds, current_study)
-    get_general_study_module(ds, DT, TM)
+    get_general_study_module(ds, current_study)
     get_rt_series_module(ds, DT, TM, "RTPLAN")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
@@ -137,12 +153,12 @@ def get_patient_module(ds, current_study):
     ds.PatientsBirthDate = current_study['PatientsBirthDate']
     ds.PatientsSex = "O"
 
-def get_general_study_module(ds, DT, TM):
+def get_general_study_module(ds, current_study):
     # Type 1
     ds.StudyInstanceUID = ""
     # Type 2
-    ds.StudyDate = DT
-    ds.StudyTime = TM
+    ds.StudyDate = current_study['StudyDate']
+    ds.StudyTime = current_study['StudyTime']
     ds.ReferringPhysiciansName = ""
     ds.StudyID = ""
     ds.AccessionNumber = ""
@@ -726,7 +742,7 @@ def build_ct(ctData, voxelGrid, current_study, **kwargs):
     cts=[]
     for z in range(nVoxels[2]):
         sopinstanceuid = "%s.%i" % (ctbaseuid, z)
-        ct = get_default_ct_dataset(sopinstanceuid)
+        ct = get_default_ct_dataset(sopinstanceuid, current_study)
         ct.SeriesInstanceUID = seriesuid
         ct.StudyInstanceUID = studyuid
         ct.FrameofReferenceUID = FoRuid
