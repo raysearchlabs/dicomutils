@@ -80,7 +80,7 @@ def get_default_rt_structure_set_dataset(current_study):
     get_rt_roi_observations_module(ds)
     return ds
 
-def get_default_rt_plan_dataset(current_study, numbeams):
+def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     sopinstanceuid = generate_uid()
@@ -97,7 +97,7 @@ def get_default_rt_plan_dataset(current_study, numbeams):
     #get_rt_tolerance_tables(ds)
     if 'PatientPosition' in current_study:
         get_rt_patient_setup_module(ds, current_study)
-    get_rt_beams_module(ds, numbeams, [10,40,10], [10,5,10], current_study)
+    get_rt_beams_module(ds, numbeams, [10,40,10], [10,5,10], collimator_angles, current_study)
     get_rt_fraction_scheme_module(ds, 30)
     #get_approval_module(ds)
     return ds
@@ -338,11 +338,13 @@ def get_rt_patient_setup_module(ds, current_study):
     ds.PatientSetupSequence = [ps]
     return ps
 
-def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, current_study):
+def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, collimator_angles, current_study):
     """nleaves is a list [na, nb, nc, ...] and leafwidths is a list [wa, wb, wc, ...]
     so that there are na leaves with width wa followed by nb leaves with width wb etc."""
     if isinstance(nbeams, int):
         nbeams = [i * 360 / nbeams for i in range(nbeams)]
+    if isinstance(collimator_angles, int):
+        collimator_angles = [collimator_angles for i in nbeams]
     ds.BeamSequence = [dicom.dataset.Dataset() for gantryAngle in nbeams]
     for i, gantryAngle in enumerate(nbeams):
         beam = ds.BeamSequence[i]
@@ -412,7 +414,7 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, current_study):
                     cp.NominalBeamEnergy = current_study['NominalEnergy']
                 # cp.GantryPitchAngle = 0 # T3
                 # cp.GantryPitchRotationDirection = "NONE" # T3
-                cp.BeamLimitingDeviceAngle = 0
+                cp.BeamLimitingDeviceAngle = collimator_angles[i]
                 cp.BeamLimitingDeviceRotationDirection = "NONE"
                 cp.PatientSupportAngle = 0
                 cp.PatientSupportRotationDirection = "NONE"
@@ -659,11 +661,11 @@ def get_current_study_uid(prop, current_study):
     return current_study[prop]
 
 
-def build_rt_plan(current_study, numbeams, **kwargs):
+def build_rt_plan(current_study, numbeams, collimator_angles, **kwargs):
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    rp = get_default_rt_plan_dataset(current_study, numbeams)
+    rp = get_default_rt_plan_dataset(current_study, numbeams, collimator_angles)
     rp.SeriesInstanceUID = seriesuid
     rp.StudyInstanceUID = studyuid
     rp.FrameofReferenceUID = FoRuid
@@ -854,6 +856,8 @@ if __name__ == '__main__':
                         For syntax, see the forthcoming documentation or the source code...""")
     parser.add_argument('--beams', dest='beams', default='3', 
                         help="""Set the number of equidistant beams to write in an RTPLAN.""")
+    parser.add_argument('--collimator-angles', dest='collimator_angles', default='0', 
+                        help="""Set the collimator angle (Beam Limiting Device Angle) of the beams.""")
     parser.add_argument('--mlc-shape', dest='mlcshapes', default=[], action='append',
                         help="""Add an opening to the current list of mlc openings.
                         For syntax, see the forthcoming documentation or the source code...""")
@@ -953,7 +957,11 @@ if __name__ == '__main__':
                     beams = int(series.beams)
                 else:
                     beams = [int(b) for b in series.beams.lstrip('[').rstrip(']').split(";")]
-                rp = build_rt_plan(current_study = current_study, numbeams = beams)
+                if all(d.isdigit() for d in series.collimator_angles):
+                    collimator_angles = int(series.collimator_angles)
+                else:
+                    collimator_angles = [int(b) for b in series.collimator_angles.lstrip('[').rstrip(']').split(";")]
+                rp = build_rt_plan(current_study = current_study, numbeams = beams, collimator_angles = collimator_angles)
                 for mlcshape in series.mlcshapes:
                     mlcshape = mlcshape.split(",")
                     if all(d.isdigit() for d in mlcshape[0]):
