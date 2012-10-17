@@ -80,7 +80,7 @@ def get_default_rt_structure_set_dataset(current_study):
     get_rt_roi_observations_module(ds)
     return ds
 
-def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles):
+def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, couch_angles):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     sopinstanceuid = generate_uid()
@@ -97,7 +97,7 @@ def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles):
     #get_rt_tolerance_tables(ds)
     if 'PatientPosition' in current_study:
         get_rt_patient_setup_module(ds, current_study)
-    get_rt_beams_module(ds, numbeams, [10,40,10], [10,5,10], collimator_angles, current_study)
+    get_rt_beams_module(ds, numbeams, [10,40,10], [10,5,10], collimator_angles, couch_angles, current_study)
     get_rt_fraction_scheme_module(ds, 30)
     #get_approval_module(ds)
     return ds
@@ -338,13 +338,15 @@ def get_rt_patient_setup_module(ds, current_study):
     ds.PatientSetupSequence = [ps]
     return ps
 
-def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, collimator_angles, current_study):
+def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, collimator_angles, couch_angles, current_study):
     """nleaves is a list [na, nb, nc, ...] and leafwidths is a list [wa, wb, wc, ...]
     so that there are na leaves with width wa followed by nb leaves with width wb etc."""
     if isinstance(nbeams, int):
         nbeams = [i * 360 / nbeams for i in range(nbeams)]
     if isinstance(collimator_angles, int):
         collimator_angles = [collimator_angles for i in nbeams]
+    if isinstance(couch_angles, int):
+        couch_angles = [couch_angles for i in nbeams]
     ds.BeamSequence = [dicom.dataset.Dataset() for gantryAngle in nbeams]
     for i, gantryAngle in enumerate(nbeams):
         beam = ds.BeamSequence[i]
@@ -416,7 +418,7 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, collimator_angles, curr
                 # cp.GantryPitchRotationDirection = "NONE" # T3
                 cp.BeamLimitingDeviceAngle = collimator_angles[i]
                 cp.BeamLimitingDeviceRotationDirection = "NONE"
-                cp.PatientSupportAngle = 0
+                cp.PatientSupportAngle = couch_angles[i]
                 cp.PatientSupportRotationDirection = "NONE"
                 # cp.TableTopEccentricAxisDistance = 0 # T3
                 cp.TableTopEccentricAngle = 0
@@ -661,11 +663,11 @@ def get_current_study_uid(prop, current_study):
     return current_study[prop]
 
 
-def build_rt_plan(current_study, numbeams, collimator_angles, **kwargs):
+def build_rt_plan(current_study, numbeams, collimator_angles, couch_angles, **kwargs):
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    rp = get_default_rt_plan_dataset(current_study, numbeams, collimator_angles)
+    rp = get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, couch_angles)
     rp.SeriesInstanceUID = seriesuid
     rp.StudyInstanceUID = studyuid
     rp.FrameofReferenceUID = FoRuid
@@ -758,7 +760,7 @@ def get_centered_coordinates(voxelGrid, nVoxels):
     z=(z-(nVoxels[2]-1)/2.0)*voxelGrid[2]
     return x,y,z
 
-def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAngle, patientPosition):
+def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAngle, patientSupportAngle, patientPosition):
     if patientPosition == 'HFS':
         psi_p, phi_p, theta_p = 0,0,0
     elif patientPosition == 'HFP':
@@ -780,7 +782,7 @@ def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAn
         
     M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
          * coordinates.Mfg(gantryAngle)
-         * np.linalg.inv(coordinates.Mfs(0))
+         * np.linalg.inv(coordinates.Mfs(patientSupportAngle))
          * np.linalg.inv(coordinates.Mse(0,0))
          * np.linalg.inv(coordinates.Met(0,0,0,0,0))
          * np.linalg.inv(coordinates.Mtp(0, 0, 0, psi_p, phi_p, theta_p))
@@ -788,7 +790,7 @@ def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAn
     return M
 
 def add_lightfield(ctData, rtplan, x, y, z):
-    # TODO: This only considers gantry rotation and BeamLimitingDeviceAngle -
+    # TODO: This only considers gantry rotation, PatientSupportAngle and BeamLimitingDeviceAngle -
     #       not isocenter position, table tilts & shifts etc.
     for beam in rtplan.BeamSequence:
         bld = getblds(beam.BeamLimitingDeviceSequence)
@@ -799,9 +801,11 @@ def add_lightfield(ctData, rtplan, x, y, z):
                 gantryAngle = cp.GantryAngle
             if hasattr(cp, 'BeamLimitingDeviceAngle'):
                 beamLimitingDeviceAngle = cp.BeamLimitingDeviceAngle
+            if hasattr(cp, 'PatientSupportAngle'):
+                patientSupportAngle = cp.PatientSupportAngle
             if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
                 bldp = getblds(cp.BeamLimitingDevicePositionSequence)
-            Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle, current_study['PatientPosition'])
+            Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle, patientSupportAngle, current_study['PatientPosition'])
             coords = np.array([x.ravel(),y.ravel(),z.ravel(),np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
             c = Mdb * coords
             # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
@@ -858,6 +862,8 @@ if __name__ == '__main__':
                         help="""Set the number of equidistant beams to write in an RTPLAN.""")
     parser.add_argument('--collimator-angles', dest='collimator_angles', default='0', 
                         help="""Set the collimator angle (Beam Limiting Device Angle) of the beams.""")
+    parser.add_argument('--couch-angles', dest='couch_angles', default='0', 
+                        help="""Set the couch angle (Patient Support Angle) of the beams.""")
     parser.add_argument('--mlc-shape', dest='mlcshapes', default=[], action='append',
                         help="""Add an opening to the current list of mlc openings.
                         For syntax, see the forthcoming documentation or the source code...""")
@@ -961,7 +967,11 @@ if __name__ == '__main__':
                     collimator_angles = int(series.collimator_angles)
                 else:
                     collimator_angles = [int(b) for b in series.collimator_angles.lstrip('[').rstrip(']').split(";")]
-                rp = build_rt_plan(current_study = current_study, numbeams = beams, collimator_angles = collimator_angles)
+                if all(d.isdigit() for d in series.couch_angles):
+                    couch_angles = int(series.couch_angles)
+                else:
+                    couch_angles = [int(b) for b in series.couch_angles.lstrip('[').rstrip(']').split(";")]
+                rp = build_rt_plan(current_study = current_study, numbeams = beams, collimator_angles = collimator_angles, couch_angles = couch_angles)
                 for mlcshape in series.mlcshapes:
                     mlcshape = mlcshape.split(",")
                     if all(d.isdigit() for d in mlcshape[0]):
