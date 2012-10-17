@@ -17,9 +17,9 @@ def rotX(psi):
                       [0, -sin(n(psi)*pi/180), cos(n(psi)*pi/180), 0],
                       [0, 0, 0, 1]])
 def rotY(phi):
-    return np.matrix([[cos(n(phi)*pi/180), 0, sin(n(phi)*pi/180), 0],
+    return np.matrix([[cos(n(phi)*pi/180), 0, -sin(n(phi)*pi/180), 0],
                       [0, 1, 0, 0],
-                      [-sin(n(phi)*pi/180), 0, cos(n(phi)*pi/180), 0],
+                      [sin(n(phi)*pi/180), 0, cos(n(phi)*pi/180), 0],
                       [0, 0, 0, 1]])
 def rotZ(theta):
     return np.matrix([[cos(n(theta)*pi/180), sin(n(theta)*pi/180), 0, 0],
@@ -52,15 +52,17 @@ def Mfs(theta_s):
 def Mse(Ls, theta_e):
     """Transform from patient support to table top eccentric coordinate system."""
     return rotZ(theta_e) * translate(0, -Ls, 0)
-def Met(Tx, Ty, Tz, psi_t):
+def Met(Tx, Ty, Tz, psi_t, phi_t):
     """Transform from table top eccentric to table top coordinate system."""
-    return rotX(psi_t) * translate(-Tx, -Ty, -Tz)
+    # The order of rotations must be the same as the rotations are described in IEC61217
+    return rotY(phi_t) * rotX(psi_t) * translate(-Tx, -Ty, -Tz)
 def Mtp(Px, Py, Pz, psi_p, phi_p, theta_p):
     """Transform from table top to patient coordinate system."""
-    return rotZ(theta_p) * rotY(-phi_p) * rotX(psi_p) * translate(-Px, -Py, -Pz)
+    # The order of rotations must be the same as the rotations are described in IEC61217
+    return rotZ(theta_p) * rotY(phi_p) * rotX(psi_p) * translate(-Px, -Py, -Pz)
 def Mfg(phi_g):
     """Transform from fixed to gantry coordinate system."""
-    return rotY(-phi_g)
+    return rotY(phi_g)
 def Mgb(SAD, theta_b):
     """Transform from gantry to beam limiting device or delineator coordinate system."""
     return rotZ(theta_b) * translate(0, 0, -SAD)

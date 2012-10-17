@@ -792,6 +792,7 @@ def add_lightfield(ctData, rtplan, x, y, z):
             Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle, current_study['PatientPosition'])
             coords = np.array([x.ravel(),y.ravel(),z.ravel(),np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
             c = Mdb * coords
+            # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
             c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
             nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
             for i in range(nleaves):
