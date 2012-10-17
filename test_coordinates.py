@@ -49,8 +49,33 @@ def test_Mtp():
     assert eq(Mtp(41,13,95,0,0,90) * v(41+1, 13, 95), v(0,-1,0))
     assert eq(Mtp(41,13,95,0,0,90) * v(41, 13+1, 95), v(1,0,0))
 
+def test_Mfg():
+    assert (Mfg(0) == np.eye(4)).all()
+    assert eq(Mfg(90) * v(1,0,0), v(0,0,1))
+    assert eq(Mfg(90) * v(0,1,0), v(0,1,0))
+    assert eq(Mfg(90) * v(0,0,1), v(-1,0,0))
+    assert all_rots(lambda i: Mfg(i))
 
+def test_Mgb():
+    assert (Mgb(0,0) == np.eye(4)).all()
+    assert eq(Mgb(100,0) * v(0,0,100), v(0,0,0))
+    assert eq(Mgb(100,90) * v(1,0,100), v(0,-1,0))
+    assert eq(Mgb(100,90) * v(0,1,100), v(1,0,0))
+    assert all_rots(lambda i: Mgb(0, i))
     
+def test_Mbw():
+    assert (Mbw(0,0) == np.eye(4)).all()
+    assert eq(Mbw(17.2, 0) * v(0,0,17.2), v(0,0,0))
+    assert eq(Mbw(17.2, 90) * v(0,1,17.2), v(1,0,0))    
+    assert eq(Mbw(17.2, 90) * v(1,0,17.2), v(0,-1,0))    
+    assert eq(Mbw(17.2, 90) * v(0,0,17.2+1), v(0,0,1))
+
+def test_Mgr():
+    assert (Mgr(0, 0, 0, 0) == np.eye(4)).all()
+    assert eq(Mgr(7, 19, 27, 0) * v(7,19,27), v(0,0,0))
+    assert eq(Mgr(0,0,0,90) * v(1,0,0), v(0,-1,0))
+    assert eq(Mgr(0,0,0,90) * v(0,1,0), v(1,0,0))
+    assert eq(Mgr(0,0,0,90) * v(0,0,1), v(0,0,1))
 
     
 
