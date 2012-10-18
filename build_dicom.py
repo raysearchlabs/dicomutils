@@ -4,7 +4,6 @@
 import numpy as np
 import dicom, time, uuid, sys, datetime, os
 import coordinates
-
 # Be careful to pass good fp numbers...
 if hasattr(dicom, 'config'):
     dicom.config.allow_DS_float = True
@@ -92,7 +91,7 @@ def get_default_rt_structure_set_dataset(current_study):
     get_rt_roi_observations_module(ds)
     return ds
 
-def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, couch_angles, isocenter):
+def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, patient_support_angles, table_top, table_top_eccentric, sad, isocenter):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyTime' not in current_study:
@@ -113,7 +112,7 @@ def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, couc
     #get_rt_tolerance_tables(ds)
     if 'PatientPosition' in current_study:
         get_rt_patient_setup_module(ds, current_study)
-    get_rt_beams_module(ds, numbeams, [10,40,10], [10,5,10], collimator_angles, couch_angles, isocenter, current_study)
+    get_rt_beams_module(ds, numbeams, [10,40,10], [10,5,10], collimator_angles, patient_support_angles, table_top, table_top_eccentric, sad, isocenter, current_study)
     get_rt_fraction_scheme_module(ds, 30)
     #get_approval_module(ds)
     return ds
@@ -351,15 +350,15 @@ def get_rt_patient_setup_module(ds, current_study):
     ds.PatientSetupSequence = [ps]
     return ps
 
-def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, collimator_angles, couch_angles, isocenter, current_study):
+def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, collimator_angles, patient_support_angles, table_top, table_top_eccentric, sad, isocenter, current_study):
     """nleaves is a list [na, nb, nc, ...] and leafwidths is a list [wa, wb, wc, ...]
     so that there are na leaves with width wa followed by nb leaves with width wb etc."""
     if isinstance(nbeams, int):
         nbeams = [i * 360 / nbeams for i in range(nbeams)]
     if isinstance(collimator_angles, int):
         collimator_angles = [collimator_angles for i in nbeams]
-    if isinstance(couch_angles, int):
-        couch_angles = [couch_angles for i in nbeams]
+    if isinstance(patient_support_angles, int):
+        patient_support_angles = [patient_support_angles for i in nbeams]
     ds.BeamSequence = [dicom.dataset.Dataset() for gantryAngle in nbeams]
     for i, gantryAngle in enumerate(nbeams):
         beam = ds.BeamSequence[i]
@@ -431,18 +430,18 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, collimator_angles, couc
                 # cp.GantryPitchRotationDirection = "NONE" # T3
                 cp.BeamLimitingDeviceAngle = collimator_angles[i]
                 cp.BeamLimitingDeviceRotationDirection = "NONE"
-                cp.PatientSupportAngle = couch_angles[i]
+                cp.PatientSupportAngle = patient_support_angles[i]
                 cp.PatientSupportRotationDirection = "NONE"
-                # cp.TableTopEccentricAxisDistance = 0 # T3
-                cp.TableTopEccentricAngle = 0
+                cp.TableTopEccentricAxisDistance = table_top_eccentric.Ls # T3
+                cp.TableTopEccentricAngle = table_top_eccentric.theta_e
                 cp.TableTopEccentricRotationDirection = "NONE"
-                cp.TableTopPitchAngle = 0
+                cp.TableTopPitchAngle = table_top.psi_t
                 cp.TableTopPitchRotationDirection = "NONE"
-                cp.TableTopRollAngle = 0
+                cp.TableTopRollAngle = table_top.phi_t
                 cp.TableTopRollRotationDirection = "NONE"
-                cp.TableTopVerticalPosition = ""
-                cp.TableTopLongitudinalPosition = ""
-                cp.TableTopLateralPosition = ""
+                cp.TableTopVerticalPosition = table_top.Tz
+                cp.TableTopLongitudinalPosition = table_top.Ty
+                cp.TableTopLateralPosition = table_top.Tx
                 cp.IsocenterPosition = isocenter
                 # cp.SurfaceEntryPoint = [0,0,0] # T3
                 # cp.SourceToSurfaceDistance = 70 # T3
@@ -675,11 +674,11 @@ def get_current_study_uid(prop, current_study):
     return current_study[prop]
 
 
-def build_rt_plan(current_study, numbeams, collimator_angles, couch_angles, isocenter, **kwargs):
+def build_rt_plan(current_study, numbeams, collimator_angles, patient_support_angles, table_top, table_top_eccentric, sad, isocenter, **kwargs):
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    rp = get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, couch_angles, isocenter)
+    rp = get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, patient_support_angles, table_top, table_top_eccentric, sad, isocenter)
     rp.SeriesInstanceUID = seriesuid
     rp.StudyInstanceUID = studyuid
     rp.FrameofReferenceUID = FoRuid
@@ -769,7 +768,7 @@ def get_centered_coordinates(voxelGrid, nVoxels):
     z=(z-(nVoxels[2]-1)/2.0)*voxelGrid[2]
     return x,y,z
 
-def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAngle, patientSupportAngle, patientPosition, isocenter_d):
+def get_dicom_to_bld_coordinate_transform(gantryAngle, beamLimitingDeviceAngle, patientSupportAngle, patientPosition, table_top, table_top_ecc, SAD, isocenter_d):
     if patientPosition == 'HFS':
         psi_p, phi_p, theta_p = 0,0,0
     elif patientPosition == 'HFP':
@@ -791,8 +790,8 @@ def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAn
 
     # Find the isocenter in patient coordinate system, had the patient system not been translated
     isocenter_p0 = (coordinates.Mfs(patientSupportAngle)
-                    * coordinates.Mse(0,0)
-                    * coordinates.Met(0,0,0,0,0)
+                    * coordinates.Mse(table_top_ecc.Ls, table_top_ecc.theta_e)
+                    * coordinates.Met(table_top.Tx, table_top.Ty, table_top.Tz, table_top.psi_t, table_top.phi_t)
                     * coordinates.Mtp(0, 0, 0, psi_p, phi_p, theta_p)) * [[0],[0],[0],[1]]
     # Find the coordinates in the patient system of the desired isocenter
     isocenter_p1 = np.linalg.inv(coordinates.Mpd()) * np.array([float(isocenter_d[0]), float(isocenter_d[1]), float(isocenter_d[2]), 1.0]).reshape((4,1))
@@ -802,8 +801,8 @@ def get_dicom_to_bld_coordinate_transform(SAD, gantryAngle, beamLimitingDeviceAn
     M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
          * coordinates.Mfg(gantryAngle)
          * np.linalg.inv(coordinates.Mfs(patientSupportAngle))
-         * np.linalg.inv(coordinates.Mse(0,0))
-         * np.linalg.inv(coordinates.Met(0,0,0,0,0))
+         * np.linalg.inv(coordinates.Mse(table_top_ecc.Ls, table_top_ecc.theta_e))
+         * np.linalg.inv(coordinates.Met(table_top.Tx, table_top.Ty, table_top.Tz, table_top.psi_t, table_top.phi_t))
          * np.linalg.inv(coordinates.Mtp(Px, Py, Pz, psi_p, phi_p, theta_p))
          * np.linalg.inv(coordinates.Mpd()))
     return M
@@ -816,6 +815,8 @@ def add_lightfield(ctData, rtplan, x, y, z):
         gantryAngle = None
         isocenter = [0,0,0]
         beamLimitingDeviceAngle = Decimal(0)
+        table_top = TableTop()
+        table_top_ecc = TableTopEcc()
         for cp in beam.ControlPointSequence:
             if hasattr(cp, 'GantryAngle'):
                 gantryAngle = cp.GantryAngle
@@ -827,7 +828,23 @@ def add_lightfield(ctData, rtplan, x, y, z):
                 bldp = getblds(cp.BeamLimitingDevicePositionSequence)
             if hasattr(cp, 'IsocenterPosition') and cp.IsocenterPosition != None:
                 isocenter = cp.IsocenterPosition
-            Mdb = get_dicom_to_bld_coordinate_transform(beam.SourceAxisDistance, gantryAngle, beamLimitingDeviceAngle, patientSupportAngle, current_study['PatientPosition'], isocenter)
+            if hasattr(cp, 'TableTopEccentricAxisDistance'):
+                table_top_ecc.Ls = cp.TableTopEccentricAxisDistance
+            if hasattr(cp, 'TableTopEccentricAngle'):
+                table_top_ecc.theta_e = cp.TableTopEccentricAngle
+            if hasattr(cp, 'TableTopPitchAngle'):
+                table_top.psi_t = cp.TableTopPitchAngle
+            if hasattr(cp, 'TableTopRollAngle'):
+                table_top.phi_t = cp.TableTopRollAngle
+            if hasattr(cp, 'TableTopLateralPosition'):
+                table_top.Tx = cp.TableTopLateralPosition
+            if hasattr(cp, 'TableTopLongitudinalPosition'):
+                table_top.Ty = cp.TableTopLongitudinalPosition
+            if hasattr(cp, 'TableTopVerticalPosition'):
+                table_top.Tz = cp.TableTopVerticalPosition
+                
+            table_top = TableTop()
+            Mdb = get_dicom_to_bld_coordinate_transform(gantryAngle, beamLimitingDeviceAngle, patientSupportAngle, current_study['PatientPosition'], table_top, table_top_ecc, beam.SourceAxisDistance, isocenter)
             coords = np.array([x.ravel(),y.ravel(),z.ravel(),np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
             c = Mdb * coords
             # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
@@ -842,6 +859,20 @@ def add_lightfield(ctData, rtplan, x, y, z):
                                                  float(bld['MLCX'].LeafPositionBoundaries[i])))
                                * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
                                                  float(bld['MLCX'].LeafPositionBoundaries[i+1])))] += 1
+
+from collections import namedtuple
+class TableTop(object):
+    def __init__(self, psi_t=0, phi_t=0, Tx=0, Ty=0, Tz=0):
+        self.psi_t = psi_t
+        self.phi_t = phi_t
+        self.Tx = Tx
+        self.Ty = Ty
+        self.Tz = Tz
+        
+class TableTopEcc(object):
+    def __init__(self, Ls=0, theta_e=0):
+        self.Ls = Ls
+        self.theta_e = theta_e
 
 if __name__ == '__main__':
     import argparse
@@ -875,17 +906,25 @@ if __name__ == '__main__':
     parser.add_argument('--values', dest='values', default=[], action='append',
                         help="""Set the Hounsfield or dose values in a volume to the given value.
                         For syntax, see the forthcoming documentation or the source code...""")
-    #parser.add_argument('--sad', dest='sad', default=1000,
-    #                    help="The Source to Axis distance.")
+    parser.add_argument('--sad', dest='sad', default=1000, help="The Source to Axis distance.")
     parser.add_argument('--structure', dest='structures', default=[], action='append',
                         help="""Add a structure to the current list of structure sets.
                         For syntax, see the forthcoming documentation or the source code...""")
     parser.add_argument('--beams', dest='beams', default='3', 
                         help="""Set the number of equidistant beams to write in an RTPLAN.""")
     parser.add_argument('--collimator-angles', dest='collimator_angles', default='0', 
-                        help="""Set the collimator angle (Beam Limiting Device Angle) of the beams.""")
-    parser.add_argument('--couch-angles', dest='couch_angles', default='0', 
-                        help="""Set the couch angle (Patient Support Angle) of the beams.""")
+                        help="""Set the collimator angle (Beam Limiting Device Angle) of the beams.
+                        In IEC61217 terminology, that corresponds to the theta_b angle.""")
+    parser.add_argument('--patient-support-angles', dest='patient_support_angles', default='0', 
+                        help="""Set the Patient Support Angle ("couch angle") of the beams.
+                        In IEC61217 terminology, that corresponds to the theta_s angle.""")
+    parser.add_argument('--table-top', dest='table_top', default='0,0,0,0,0',
+                        help="""Set the table top pitch, roll and lateral, longitudinal and vertical positions.
+                        In IEC61217 terminology, that corresponds to the
+                        psi_t, phi_t, Tx, Ty, Tz coordinates, respectively.""")
+    parser.add_argument('--table-top-eccentric', dest='table_top_eccentric', default='0,0',
+                        help="""Set the table top eccentric axis distance and angle.
+                        In IEC61217 terminology, that corresponds to the Ls and theta_e coordinates, respectively.""")
     parser.add_argument('--isocenter', dest='isocenter', default='[0;0;0]', 
                         help="""Set the isocenter of the beams.""")
     parser.add_argument('--mlc-shape', dest='mlcshapes', default=[], action='append',
@@ -991,12 +1030,17 @@ if __name__ == '__main__':
                     collimator_angles = int(series.collimator_angles)
                 else:
                     collimator_angles = [int(b) for b in series.collimator_angles.lstrip('[').rstrip(']').split(";")]
-                if all(d.isdigit() for d in series.couch_angles):
-                    couch_angles = int(series.couch_angles)
+                if all(d.isdigit() for d in series.patient_support_angles):
+                    patient_support_angles = int(series.patient_support_angles)
                 else:
-                    couch_angles = [int(b) for b in series.couch_angles.lstrip('[').rstrip(']').split(";")]
+                    patient_support_angles = [int(b) for b in series.patient_support_angles.lstrip('[').rstrip(']').split(";")]
+                table_top = TableTop(*[float(b) for b in series.table_top.split(",")])
+                table_top_eccentric = TableTopEcc(*[float(b) for b in series.table_top_eccentric.split(",")])
                 isocenter = [float(b) for b in series.isocenter.lstrip('[').rstrip(']').split(";")]
-                rp = build_rt_plan(current_study = current_study, numbeams = beams, collimator_angles = collimator_angles, couch_angles = couch_angles, isocenter = isocenter)
+                rp = build_rt_plan(current_study = current_study, numbeams = beams, collimator_angles = collimator_angles,
+                                   patient_support_angles = patient_support_angles,
+                                   table_top = table_top, table_top_eccentric = table_top_eccentric,
+                                   sad = series.sad, isocenter = isocenter)
                 for mlcshape in series.mlcshapes:
                     mlcshape = mlcshape.split(",")
                     if all(d.isdigit() for d in mlcshape[0]):
