@@ -246,7 +246,7 @@ def get_rt_dose_module(ds, current_study):
     ds.DoseType = "PHYSICAL"
     ds.DoseSummationType = "PLAN"
 
-    # Type 1C if Dose Summation Type is any of the enumerated values. 
+    # Type 1C if Dose Summation Type is any of the enumerated values.
     ds.ReferencedRTPlanSequence = []
     if 'RTPLAN' in current_study:
         refplan = dicom.dataset.Dataset()
@@ -273,7 +273,7 @@ def get_rt_dose_module(ds, current_study):
             raise NotImplementedError
         elif ds.DoseSummationType == "BRACHY":
             raise NotImplementedError
-    
+
     # Type 3
     # ds.InstanceNumber = 0
     # ds.DoseComment = "blabla"
@@ -290,7 +290,7 @@ def get_rt_general_plan_module(ds, DT, TM, current_study):
         ds.ReferencedStructureSetSequence = [dicom.dataset.Dataset()]
         ds.ReferencedStructureSetSequence[0].ReferencedSOPClassUID = get_uid("RT Structure Set Storage")
         ds.ReferencedStructureSetSequence[0].ReferencedSOPInstanceUID = current_study['RTSTRUCT'].SOPInstanceUID
-    
+
     # Type 2
     ds.RTPlanDate = DT
     ds.RTPlanTime = TM
@@ -308,7 +308,7 @@ def get_rt_general_plan_module(ds, DT, TM, current_study):
         ds.ReferencedDoseSequence[0].ReferencedSOPInstanceUID = current_study['RTDOSE'].SOPInstanceUID
     # ds.ReferencedRTPlanSequence = []
 
-    
+
 def get_rt_fraction_scheme_module(ds, nfractions):
     ds.FractionGroupSequence = [dicom.dataset.Dataset()] # T1
     fg = ds.FractionGroupSequence[0]
@@ -667,7 +667,7 @@ def add_roi_to_rt_roi_observation(ds, roi, label, interpreted_type):
     # roiobs.MaterialID = "" # T3
     # roiobs.ROIPhysicalPropertiesSequence = [] # T3
     return roiobs
-    
+
 def get_current_study_uid(prop, current_study):
     if prop not in current_study:
         current_study[prop] = generate_uid()
@@ -705,14 +705,14 @@ def build_rt_dose(doseData, voxelGrid, current_study, **kwargs):
     rd.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
                                -(nVoxels[1]-1)*voxelGrid[1]/2.0,
                                -(nVoxels[2]-1)*voxelGrid[2]/2.0]
-    
+
     rd.PixelData=doseData.tostring(order='F')
     for k, v in kwargs.iteritems():
         if v != None:
             setattr(rd, k, v)
     return rd
 
-    
+
 def build_rt_structure_set(rois, current_study, **kwargs):
     rtstructuid = generate_uid()
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
@@ -730,8 +730,8 @@ def build_rt_structure_set(rois, current_study, **kwargs):
             setattr(rs, k, v)
     return rs
 
-    
-    
+
+
 def build_ct(ctData, voxelGrid, current_study, **kwargs):
     nVoxels = ctData.shape
     ctbaseuid = generate_uid()
@@ -807,60 +807,57 @@ def get_dicom_to_bld_coordinate_transform(gantryAngle, beamLimitingDeviceAngle, 
          * np.linalg.inv(coordinates.Mpd()))
     return M
 
-def add_lightfield(ctData, rtplan, x, y, z):
-    # TODO: This only considers gantry rotation, PatientSupportAngle and BeamLimitingDeviceAngle -
-    #       not isocenter position, table tilts & shifts etc.
-    for beam in rtplan.BeamSequence:
-        bld = getblds(beam.BeamLimitingDeviceSequence)
-        gantryAngle = None
-        isocenter = [0,0,0]
-        beamLimitingDeviceAngle = Decimal(0)
-        table_top = TableTop()
-        table_top_ecc = TableTopEcc()
-        for cp in beam.ControlPointSequence:
-            if hasattr(cp, 'GantryAngle'):
-                gantryAngle = cp.GantryAngle
-            if hasattr(cp, 'BeamLimitingDeviceAngle'):
-                beamLimitingDeviceAngle = cp.BeamLimitingDeviceAngle
-            if hasattr(cp, 'PatientSupportAngle'):
-                patientSupportAngle = cp.PatientSupportAngle
-            if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
-                bldp = getblds(cp.BeamLimitingDevicePositionSequence)
-            if hasattr(cp, 'IsocenterPosition') and cp.IsocenterPosition != None:
-                isocenter = cp.IsocenterPosition
-            if hasattr(cp, 'TableTopEccentricAxisDistance'):
-                table_top_ecc.Ls = cp.TableTopEccentricAxisDistance
-            if hasattr(cp, 'TableTopEccentricAngle'):
-                table_top_ecc.theta_e = cp.TableTopEccentricAngle
-            if hasattr(cp, 'TableTopPitchAngle'):
-                table_top.psi_t = cp.TableTopPitchAngle
-            if hasattr(cp, 'TableTopRollAngle'):
-                table_top.phi_t = cp.TableTopRollAngle
-            if hasattr(cp, 'TableTopLateralPosition'):
-                table_top.Tx = cp.TableTopLateralPosition
-            if hasattr(cp, 'TableTopLongitudinalPosition'):
-                table_top.Ty = cp.TableTopLongitudinalPosition
-            if hasattr(cp, 'TableTopVerticalPosition'):
-                table_top.Tz = cp.TableTopVerticalPosition
-                
-            table_top = TableTop()
-            Mdb = get_dicom_to_bld_coordinate_transform(gantryAngle, beamLimitingDeviceAngle, patientSupportAngle, current_study['PatientPosition'], table_top, table_top_ecc, beam.SourceAxisDistance, isocenter)
-            coords = np.array([x.ravel(),y.ravel(),z.ravel(),np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
-            c = Mdb * coords
-            # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
-            c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
-            nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
-            for i in range(nleaves):
-                ctData.ravel()[(c2[0,:] >= max(float(bldp['ASYMX'].LeafJawPositions[0]),
-                                              float(bldp['MLCX'].LeafJawPositions[i])))
-                               * (c2[0,:] <= min(float(bldp['ASYMX'].LeafJawPositions[1]),
-                                                 float(bldp['MLCX'].LeafJawPositions[i + nleaves])))
-                               * (c2[1,:] > max(float(bldp['ASYMY'].LeafJawPositions[0]),
-                                                 float(bld['MLCX'].LeafPositionBoundaries[i])))
-                               * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
-                                                 float(bld['MLCX'].LeafPositionBoundaries[i+1])))] += 1
+def add_lightfield(ctData, beam, x, y, z):
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    gantry_angle = None
+    isocenter = [0,0,0]
+    beam_limiting_device_angle = Decimal(0)
+    table_top = TableTop()
+    table_top_ecc = TableTopEcc()
+    patient_position = 'HFS'
+    patient_support_angle = 0
+    if hasattr(beam, 'SourceAxisDistance'):
+        sad = beam.SourceAxisDistance
+    else:
+        sad = 1000
+    for cp in beam.ControlPointSequence:
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+        gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
+        beam_limiting_device_angle = getattr(cp, 'BeamLimitingDeviceAngle', beam_limiting_device_angle)
+        patient_support_angle = getattr(cp, 'PatientSupportAngle', patient_support_angle)
+        isocenter = getattr(cp, 'IsocenterPosition', isocenter)
+        table_top_ecc.Ls = getattr(cp, 'TableTopEccentricAxisDistance', table_top_ecc.Ls)
+        table_top_ecc.theta_e = getattr(cp, 'TableTopEccentricAngle', table_top_ecc.theta_e)
+        table_top.psi_t = getattr(cp, 'TableTopPitchAngle', table_top.psi_t)
+        table_top.phi_t = getattr(cp, 'TableTopRollAngle', table_top.phi_t)
+        table_top.Tx = getattr(cp, 'TableTopLateralPosition', table_top.Tx)
+        table_top.Ty = getattr(cp, 'TableTopLongitudinalPosition', table_top.Ty)
+        table_top.Tz = getattr(cp, 'TableTopVerticalPosition', table_top.Tz)
+        patient_position = getattr(cp, 'PatientPosition', patient_position)
 
-from collections import namedtuple
+        table_top = TableTop()
+        Mdb = get_dicom_to_bld_coordinate_transform(gantry_angle, beam_limiting_device_angle,
+                                                    patient_support_angle, patient_position,
+                                                    table_top, table_top_ecc, sad, isocenter)
+        coords = np.array([x.ravel(),
+                           y.ravel(),
+                           z.ravel(),
+                           np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
+        c = Mdb * coords
+        # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
+        c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
+        nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+        for i in range(nleaves):
+            ctData.ravel()[(c2[0,:] >= max(float(bldp['ASYMX'].LeafJawPositions[0]),
+                                          float(bldp['MLCX'].LeafJawPositions[i])))
+                           * (c2[0,:] <= min(float(bldp['ASYMX'].LeafJawPositions[1]),
+                                             float(bldp['MLCX'].LeafJawPositions[i + nleaves])))
+                           * (c2[1,:] > max(float(bldp['ASYMY'].LeafJawPositions[0]),
+                                             float(bld['MLCX'].LeafPositionBoundaries[i])))
+                           * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
+                                             float(bld['MLCX'].LeafPositionBoundaries[i+1])))] += 1
+
 class TableTop(object):
     def __init__(self, psi_t=0, phi_t=0, Tx=0, Ty=0, Tz=0):
         self.psi_t = psi_t
@@ -868,7 +865,7 @@ class TableTop(object):
         self.Tx = Tx
         self.Ty = Ty
         self.Tz = Tz
-        
+
 class TableTopEcc(object):
     def __init__(self, Ls=0, theta_e=0):
         self.Ls = Ls
@@ -910,12 +907,12 @@ if __name__ == '__main__':
     parser.add_argument('--structure', dest='structures', default=[], action='append',
                         help="""Add a structure to the current list of structure sets.
                         For syntax, see the forthcoming documentation or the source code...""")
-    parser.add_argument('--beams', dest='beams', default='3', 
+    parser.add_argument('--beams', dest='beams', default='3',
                         help="""Set the number of equidistant beams to write in an RTPLAN.""")
-    parser.add_argument('--collimator-angles', dest='collimator_angles', default='0', 
+    parser.add_argument('--collimator-angles', dest='collimator_angles', default='0',
                         help="""Set the collimator angle (Beam Limiting Device Angle) of the beams.
                         In IEC61217 terminology, that corresponds to the theta_b angle.""")
-    parser.add_argument('--patient-support-angles', dest='patient_support_angles', default='0', 
+    parser.add_argument('--patient-support-angles', dest='patient_support_angles', default='0',
                         help="""Set the Patient Support Angle ("couch angle") of the beams.
                         In IEC61217 terminology, that corresponds to the theta_s angle.""")
     parser.add_argument('--table-top', dest='table_top', default='0,0,0,0,0',
@@ -925,7 +922,7 @@ if __name__ == '__main__':
     parser.add_argument('--table-top-eccentric', dest='table_top_eccentric', default='0,0',
                         help="""Set the table top eccentric axis distance and angle.
                         In IEC61217 terminology, that corresponds to the Ls and theta_e coordinates, respectively.""")
-    parser.add_argument('--isocenter', dest='isocenter', default='[0;0;0]', 
+    parser.add_argument('--isocenter', dest='isocenter', default='[0;0;0]',
                         help="""Set the isocenter of the beams.""")
     parser.add_argument('--mlc-shape', dest='mlcshapes', default=[], action='append',
                         help="""Add an opening to the current list of mlc openings.
@@ -934,7 +931,7 @@ if __name__ == '__main__':
                         help="""Sets the jaw shape to x * y, centered at (xc, yc). Given as [x;y;xc;yc]. Defaults to conforming to the MLC.""")
     parser.add_argument('--outdir', dest='outdir', default='.',
                         help="""Generate data to this directory. (default: working directory)""")
-    
+
     args = parser.parse_args(namespace = argparse.Namespace(studies=[[]]))
 
     voxelGrid = [float(x) for x in args.VoxelSize.split(",")]
@@ -943,7 +940,7 @@ if __name__ == '__main__':
 
     if not os.path.exists(args.outdir):
         os.makedirs(args.outdir)
-    
+
     def build_sphere_contours(z, name, radius, center, interpreted_type, ntheta = 32):
         #print "build_sphere_contours", z, name, radius, center, interpreted_type, ntheta
         contours = np.array([[[np.sqrt(radius**2 - (Z-center[2])**2) * np.cos(theta) + center[0],
@@ -966,7 +963,7 @@ if __name__ == '__main__':
         return {'Name': name,
                 'InterpretedType': interpreted_type,
                 'Contours': contours}
-    
+
     for study in args.studies:
         current_study = {}
         for series in study:
@@ -998,7 +995,8 @@ if __name__ == '__main__':
                             center = [0,0,0]
                         ctData[(abs(x-center[0]) <= size[0]/2.0) * (abs(y-center[1]) <= size[1]/2.0) * (abs(z-center[2]) <= size[2]/2.0)] = val
                     elif shape == "lightfield":
-                        add_lightfield(ctData, current_study['RTPLAN'], x, y, z)
+                        for beam in current_study['RTPLAN'].BeamSequence:
+                            add_lightfield(ctData, beam, x, y, z)
 
             if series.patient_position != None:
                 current_study['PatientPosition'] = series.patient_position
@@ -1116,7 +1114,7 @@ if __name__ == '__main__':
                                                                                     voxelGrid[1]*nVoxels[1],
                                                                                     voxelGrid[2]*nVoxels[2]],
                                                              [0,0,0], 'EXTERNAL'))
-                    
+
                 rs = build_rt_structure_set(structures, current_study = current_study)
                 current_study['RTSTRUCT'] = rs
                 dicom.write_file(os.path.join(args.outdir, rs.filename), rs)
