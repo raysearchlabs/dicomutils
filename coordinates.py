@@ -60,9 +60,9 @@ def Mtp(Px, Py, Pz, psi_p, phi_p, theta_p):
     """Transform from table top to patient coordinate system."""
     # The order of rotations must be the same as the rotations are described in IEC61217
     return rotZ(theta_p) * rotY(phi_p) * rotX(psi_p) * translate(-Px, -Py, -Pz)
-def Mfg(phi_g):
-    """Transform from fixed to gantry coordinate system."""
-    return rotY(phi_g)
+def Mfg(psi_g, phi_g):
+    """Transform from fixed to gantry coordinate system, plus the non-standard DICOM gantry pitch rotation psi_g."""
+    return rotX(psi_g) * rotY(phi_g)
 def Mgb(Bz, theta_b):
     """Transform from gantry to beam limiting device or delineator coordinate system."""
     return rotZ(theta_b) * translate(0, 0, -Bz)
@@ -84,7 +84,7 @@ class Coordinates(object):
                  Ls = 0, theta_e = 0, 
                  Tx = 0, Ty = 0, Tz = 0, psi_t = 0, phi_t = 0, 
                  Px = 0, Py = 0, Pz = 0, psi_p = 0, phi_p = 0, theta_p = 0,
-                 phi_g = 0,
+                 psi_g = 0, phi_g = 0,
                  Bz = 0, theta_b = 0,
                  Wz = 0, theta_w = 0,
                  Rx = 0, Ry = 0, Rz = 0, theta_r = 0):
@@ -102,6 +102,7 @@ class Coordinates(object):
         self.psi_p = psi_p
         self.phi_p = phi_p
         self.theta_p = theta_p
+        self.psi_g = psi_g
         self.phi_g = phi_g
         self.Bz = Bz
         self.theta_b = theta_b

@@ -28,12 +28,12 @@ def get_empty_dataset(filename, storagesopclass, sopinstanceuid):
     return ds
 
 def get_default_ct_dataset(sopinstanceuid, current_study):
-    DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
-    TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyTime' not in current_study:
-        current_study['StudyTime'] = TM
+        current_study['StudyTime'] = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyDate' not in current_study:
-        current_study['StudyDate'] = DT
+        current_study['StudyDate'] = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
+    DT = current_study['StudyDate']
+    TM = current_study['StudyTime']
     filename = "CT_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "CT Image Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "CT Image Storage", sopinstanceuid)
@@ -116,6 +116,34 @@ def get_default_rt_plan_dataset(current_study, numbeams, collimator_angles, pati
     get_rt_fraction_scheme_module(ds, 30)
     #get_approval_module(ds)
     return ds
+
+def get_default_rt_ion_plan_dataset(current_study, numbeams, collimator_angles, patient_support_angles, table_top, table_top_eccentric, sad, isocenter):
+    """Not done, in development"""
+    DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
+    TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    if 'StudyTime' not in current_study:
+        current_study['StudyTime'] = TM
+    if 'StudyDate' not in current_study:
+        current_study['StudyDate'] = DT
+    sopinstanceuid = generate_uid()
+    filename = "RTPLAN_%s.dcm" % (sopinstanceuid,)
+    ds = get_empty_dataset(filename, "RT Plan Storage", sopinstanceuid)
+    get_sop_common_module(ds, DT, TM, "RT Plan Storage", sopinstanceuid)
+    get_patient_module(ds, current_study)
+    get_general_study_module(ds, current_study)
+    get_rt_series_module(ds, DT, TM, "RTIONPLAN")
+    get_frame_of_reference_module(ds)
+    get_general_equipment_module(ds)
+    get_rt_general_plan_module(ds, DT, TM, current_study)
+    #get_rt_prescription_module(ds)
+    #get_rt_tolerance_tables(ds)
+    if 'PatientPosition' in current_study:
+        get_rt_patient_setup_module(ds, current_study)
+    get_rt_ion_beams_module(ds, numbeams, collimator_angles, patient_support_angles, table_top, table_top_eccentric, sad, isocenter, current_study)
+    get_rt_fraction_scheme_module(ds, 30)
+    #get_approval_module(ds)
+    return ds
+
 
 def get_sop_common_module(ds, DT, TM, modality, sopinstanceuid):
     # Type 1
@@ -447,6 +475,105 @@ def get_rt_beams_module(ds, nbeams, nleaves, leafwidths, collimator_angles, pati
                 # cp.SourceToSurfaceDistance = 70 # T3
 
 
+def get_rt_ion_beams_module(ds, nbeams, collimator_angles, patient_support_angles, table_top, table_top_eccentric, sad, isocenter, current_study):
+    """Not done, in development"""
+    if isinstance(nbeams, int):
+        nbeams = [i * 360 / nbeams for i in range(nbeams)]
+    if isinstance(collimator_angles, int):
+        collimator_angles = [collimator_angles for i in nbeams]
+    if isinstance(patient_support_angles, int):
+        patient_support_angles = [patient_support_angles for i in nbeams]
+    ds.IonBeamSequence = [dicom.dataset.Dataset() for gantryAngle in nbeams]
+    for i, gantryAngle in enumerate(nbeams):
+        beam = ds.IonBeamSequence[i]
+        beam.BeamNumber = i + 1
+        beam.BeamName = "B{0}".format(i+1) # T3
+        # beam.BeamDescription # T3
+        beam.BeamType = "STATIC"
+        beam.RadiationType = "PROTON"
+        # beam.RadiationMassNumber = 1 # 1C on beam.RadiationType == ION
+        # beam.RadiationAtomicNumber = 1 # 1C on beam.RadiationType == ION
+        # beam.RadiationChargeState = 1 # 1C on beam.RadiationType == ION
+        beam.ScanMode = "MODULATED"
+        beam.TreatmentMachineName = "Mevion_1" # T2
+        # beam.Manufacturer = "" # T3
+        # beam.InstitutionName # T3
+        # beam.InstitutionAddress # T3
+        # beam.InstitutionalDepartmentName # T3
+        # beam.ManufacturersModelName # T3
+        # beam.DeviceSerialNumber # T3
+        beam.PrimaryDosimeterUnit = "MU" # T3
+        # beam.ReferencedToleranceTableNumber # T3
+        beam.VirtualSourceAxisDistance = 1000 # mm, T1
+        # beam.IonBeamLimitingDeviceSequence = [dicom.dataset.Dataset() for k in range(3)] # T3
+        if 'PatientPosition' in current_study:
+            beam.ReferencedPatientSetupNumber = 1  # T3
+        # beam.ReferencedReferenceImageSequence = []  # T3
+        beam.TreatmentDeliveryType = "TREATMENT"
+        # beam.ReferencedDoseSequence = [] # T3
+        beam.NumberofWedges = 0
+        # beam.TotalWedgeTrayWaterEquivalentThickness = 0 # T3
+        # beam.IonWedgeSequence = [] # T1C on NumberofWedges != 0
+        beam.NumberofCompensators = 0
+        # beam.TotalCompensatorTrayWaterEquivalentThickness = 0 # T3
+        # beam.IonRangeCompensatorSequence = [] # T1C on NumberofCompensators != 0
+        beam.NumberofBoli = 0
+        beam.NumberofBlocks = 0
+        # beam.SnoutSequence = [] # T3
+        # beam.ApplicatorSequence = []
+        beam.NumberofRangeShifters = 0
+        # beam.RangeShifterSequence = [] # T1C on NumberofRangeShifters != 0
+        beam.NumberofLateralSpreadingDevices = 0 # 1 for SS, 2 for DS?
+        # beam.LateralSpreadingDeviceSequence = [] # T1C on beam.NumberofLateralSpreadingDevices != 0
+        beam.NumberofRangeModulators = 0
+        # beam.RangeModulatorSequence = []
+        # TODO: Patient Support Identification Macro
+        # beam.FixationLightAzimuthalAngle # T3
+        # beam.FixationLightPolarAngle # T3
+        beam.FinalCumulativeMetersetWeight = 100
+        beam.NumberofControlPoints = 2
+        beam.IonControlPointSequence = [dicom.dataset.Dataset() for k in range(2)]
+        for j in range(2):
+            cp = beam.IonControlPointSequence[j]
+            cp.ControlPointIndex = j
+            cp.CumulativeMetersetWeight = j * beam.FinalCumulativeMetersetWeight / 1
+            # cp.ReferencedDoseReferenceSequence = [] # T3
+            # cp.ReferencedDoseSequence = [] # T1C on DoseSummationType == "CONTROL_POINT"
+            # cp.MetersetRate = 100 # T3
+            if j == 0:
+                cp.NominalBeamEnergy = current_study['NominalEnergy'] # T1C in first cp or change
+                # cp.IonWedgePositionSequence = [] # T1C on beam.NumberofWedges != 0
+                # cp.RangeShifterSettingsSequence = [] # T1C on beam.NumberofRangeShifters != 0
+                # cp.LateralSpreadingDeviceSettingsSequence = [] # T1C on beam.NumberofLateralSpreadingDevices != 0
+                # cp.RangeModulatorSettingsSequence = [] # T1C on beam.NumberofRangeModulators != 0
+                # TODO?: Beam Limiting Device Position Macro
+                cp.GantryAngle = gantryAngle
+                cp.GantryRotationDirection = 'NONE'
+                # cp.KVp = "" # T1C on nominal beam energy not present
+                cp.GantryPitchAngle = "" # T2C on first cp or change
+                cp.GantryPitchRotationDirection = "" # T2C on first cp or change
+                cp.BeamLimitingDeviceAngle = collimator_angles[i]
+                cp.BeamLimitingDeviceRotationDirection = "NONE"
+                # cp.ScanSpotTuneID = "XYZ" # T1C on beam.ScanMode == "MODULATED"
+                # cp.NumberofScanSpotPositions = 0 # T1C on beam.ScanMode == "MODULATED"
+                # cp.ScanSpotPositionMap = [] # T1C on beam.ScanMode == "MODULATED"
+                # cp.ScanSpotMetersetWeights = [] # T1C on beam.ScanMode == "MODULATED"
+                # cp.ScanningSpotSize = "" # T3
+                # cp.NumberofPaintings = 0 # T1C on beam.ScanMode == "MODULATED"
+                cp.PatientSupportAngle = patient_support_angles[i]
+                cp.PatientSupportRotationDirection = "NONE"
+                cp.TableTopPitchAngle = table_top.psi_t
+                cp.TableTopPitchRotationDirection = "NONE"
+                cp.TableTopRollAngle = table_top.phi_t
+                cp.TableTopRollRotationDirection = "NONE"
+                # cp.HeadFixationAngle = "" # T3
+                cp.TableTopVerticalPosition = table_top.Tz
+                cp.TableTopLongitudinalPosition = table_top.Ty
+                cp.TableTopLateralPosition = table_top.Tx
+                cp.SnoutPosition = "" # T2C on first cp or change
+                cp.IsocenterPosition = isocenter
+                # cp.SurfaceEntryPoint = [0,0,0] # T3
+
 def nmin(it):
     n = None
     for i in it:
@@ -768,7 +895,7 @@ def get_centered_coordinates(voxelGrid, nVoxels):
     z=(z-(nVoxels[2]-1)/2.0)*voxelGrid[2]
     return x,y,z
 
-def get_dicom_to_bld_coordinate_transform(gantryAngle, beamLimitingDeviceAngle, patientSupportAngle, patientPosition, table_top, table_top_ecc, SAD, isocenter_d):
+def get_dicom_to_bld_coordinate_transform(gantryAngle, gantryPitchAngle, beamLimitingDeviceAngle, patientSupportAngle, patientPosition, table_top, table_top_ecc, SAD, isocenter_d):
     if patientPosition == 'HFS':
         psi_p, phi_p, theta_p = 0,0,0
     elif patientPosition == 'HFP':
@@ -799,7 +926,7 @@ def get_dicom_to_bld_coordinate_transform(gantryAngle, beamLimitingDeviceAngle, 
     Px,Py,Pz,_ = isocenter_p0 - isocenter_p1
 
     M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
-         * coordinates.Mfg(gantryAngle)
+         * coordinates.Mfg(gantryPitchAngle, gantryAngle)
          * np.linalg.inv(coordinates.Mfs(patientSupportAngle))
          * np.linalg.inv(coordinates.Mse(table_top_ecc.Ls, table_top_ecc.theta_e))
          * np.linalg.inv(coordinates.Met(table_top.Tx, table_top.Ty, table_top.Tz, table_top.psi_t, table_top.phi_t))
@@ -810,6 +937,7 @@ def get_dicom_to_bld_coordinate_transform(gantryAngle, beamLimitingDeviceAngle, 
 def add_lightfield(ctData, beam, x, y, z):
     bld = getblds(beam.BeamLimitingDeviceSequence)
     gantry_angle = None
+    gantry_pitch_angle = 0
     isocenter = [0,0,0]
     beam_limiting_device_angle = Decimal(0)
     table_top = TableTop()
@@ -824,6 +952,7 @@ def add_lightfield(ctData, beam, x, y, z):
         if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
             bldp = getblds(cp.BeamLimitingDevicePositionSequence)
         gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
+        gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_angle)
         beam_limiting_device_angle = getattr(cp, 'BeamLimitingDeviceAngle', beam_limiting_device_angle)
         patient_support_angle = getattr(cp, 'PatientSupportAngle', patient_support_angle)
         isocenter = getattr(cp, 'IsocenterPosition', isocenter)
@@ -837,7 +966,7 @@ def add_lightfield(ctData, beam, x, y, z):
         patient_position = getattr(cp, 'PatientPosition', patient_position)
 
         table_top = TableTop()
-        Mdb = get_dicom_to_bld_coordinate_transform(gantry_angle, beam_limiting_device_angle,
+        Mdb = get_dicom_to_bld_coordinate_transform(gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                                     patient_support_angle, patient_position,
                                                     table_top, table_top_ecc, sad, isocenter)
         coords = np.array([x.ravel(),
