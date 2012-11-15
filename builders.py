@@ -73,8 +73,8 @@ class CTBuilder(object):
         self.ct_data = np.zeros(self.voxels, dtype=np.int16)
         if column_direction == None or row_direction == None:
             assert column_direction == None and row_direction == None
-            column_direction = [0,1,0]
-            row_direction = [1,0,0]
+            column_direction = [1,0,0]
+            row_direction = [0,1,0]
         if slice_direction == None:
             slice_direction = np.cross(column_direction, row_direction)
         slice_direction = slice_direction / np.linalg.norm(slice_direction)
@@ -103,10 +103,16 @@ class CTBuilder(object):
         coldir = self.ImageOrientationPatient[:3]
         rowdir = self.ImageOrientationPatient[3:]
         slicedir = self.slice_direction
-        x = self.corner[0] + (x + 0.5) * rowdir[0] + (y + 0.5) * coldir[0] + (z + 0.5) * slicedir[0]
-        y = self.corner[1] + (x + 0.5) * rowdir[1] + (y + 0.5) * coldir[1] + (z + 0.5) * slicedir[1]
-        z = self.corner[2] + (x + 0.5) * rowdir[2] + (y + 0.5) * coldir[2] + (z + 0.5) * slicedir[2]
-        return x,y,z
+        xp = (self.corner[0] + (x + 0.5) * rowdir[0] * self.voxel_size[0] +
+             (y + 0.5) * coldir[0] * self.voxel_size[1] +
+             (z + 0.5) * slicedir[0] * self.voxel_size[2])
+        yp = (self.corner[1] + (x + 0.5) * rowdir[1] * self.voxel_size[0] +
+             (y + 0.5) * coldir[1] * self.voxel_size[1] +
+             (z + 0.5) * slicedir[1] * self.voxel_size[2])
+        zp = (self.corner[2] + (x + 0.5) * rowdir[2] * self.voxel_size[0] +
+             (y + 0.5) * coldir[2] * self.voxel_size[1] +
+             (z + 0.5) * slicedir[2] * self.voxel_size[2])
+        return xp,yp,zp
 
     def add_sphere(self, radius, center, stored_value = None, real_value = None, mode = 'set'):
         if real_value != None:
@@ -215,7 +221,7 @@ class ROIBuilder(object):
         if self.built:
             return self.roi
         roi = modules.add_roi_to_structure_set(structure_set, self.name, self.structure_set_builder.current_study)
-        modules.add_roi_to_roi_contour(structure_set, roi, self.contours, self.structure_set_builder.current_study)
+        modules.add_roi_to_roi_contour(structure_set, roi, self.contours, self.structure_set_builder.images.build())
         modules.add_roi_to_rt_roi_observation(structure_set, roi, self.name, self.interpreted_type)
         self.built = True
         self.roi = roi
@@ -244,6 +250,7 @@ class StructureSetBuilder(object):
                                for X in [-1,1]
                                for Y in [-1,1]]
                                for Z in z[0,0,np.abs(z[0,0,:] - center[2]) < size[2]/2]])
+        print "contours", contours, z[0,0,:] - center[2]
         if roi_number == None:
             roi_number = 1
             for rb in self.roi_builders:

@@ -422,7 +422,7 @@ def add_roi_to_rt_roi_observation(ds, roi, label, interpreted_type):
     # roiobs.ROIPhysicalPropertiesSequence = [] # T3
     return roiobs
 
-def add_roi_to_roi_contour(ds, roi, contours, current_study):
+def add_roi_to_roi_contour(ds, roi, contours, ref_images):
     newroi = dicom.dataset.Dataset()
     ds.ROIContourSequence.append(newroi)
     newroi.ReferencedROINumber = roi.ROINumber
@@ -434,9 +434,9 @@ def add_roi_to_roi_contour(ds, roi, contours, current_study):
         c.ContourNumber = i
         c.ContourGeometricType = 'CLOSED_PLANAR'
         # c.AttachedContours = [] # T3
-        if 'CT' in current_study:
+        if ref_images != None:
             c.ContourImageSequence = [] # T3
-            for image in current_study['CT']:
+            for image in ref_images:
                 if image.ImagePositionPatient[2] == contour[0,2]:
                     imgref = dicom.dataset.Dataset()
                     imgref.ReferencedSOPInstanceUID = image.SOPInstanceUID
