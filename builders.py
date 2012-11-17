@@ -32,8 +32,8 @@ class StudyBuilder(object):
         self.seriesbuilders['CT'].append(b)
         return b
 
-    def build_static_plan(self, **kwargs):
-        b = StaticPlanBuilder(self.current_study, **kwargs)
+    def build_static_plan(self, structure_set=None, **kwargs):
+        b = StaticPlanBuilder(self.current_study, structure_set=structure_set, **kwargs)
         self.seriesbuilders['RTPLAN'].append(b)
         return b
 
@@ -53,7 +53,7 @@ class StudyBuilder(object):
         self.datasets = datasets
         return self.datasets
 
-    def write(self, outdir='.', print_filenames=True):
+    def write(self, outdir='.', print_filenames=False):
         for modality in self.modalityorder:
             for sb in self.seriesbuilders[modality]:
                 for ds in sb.build():
@@ -86,7 +86,7 @@ class CTBuilder(object):
     @property
     def gridsize(self):
         return np.array([self.voxels[0] * self.voxel_size[0],
-                         self.voxels[1] * self.voxel_size[2],
+                         self.voxels[1] * self.voxel_size[1],
                          self.voxels[2] * self.voxel_size[2]])
 
     def real_valueToStoredValue(self, real_value):
@@ -99,37 +99,36 @@ class CTBuilder(object):
         self.ct_data[:] = stored_value
 
     def mgrid(self):
-        x,y,z=np.mgrid[:self.voxels[0],:self.voxels[1],:self.voxels[2]]
+        col,row,slice=np.mgrid[:self.voxels[0],:self.voxels[1],:self.voxels[2]]
         coldir = self.ImageOrientationPatient[:3]
         rowdir = self.ImageOrientationPatient[3:]
         slicedir = self.slice_direction
-        xp = (self.corner[0] + (x + 0.5) * rowdir[0] * self.voxel_size[0] +
-             (y + 0.5) * coldir[0] * self.voxel_size[1] +
-             (z + 0.5) * slicedir[0] * self.voxel_size[2])
-        yp = (self.corner[1] + (x + 0.5) * rowdir[1] * self.voxel_size[0] +
-             (y + 0.5) * coldir[1] * self.voxel_size[1] +
-             (z + 0.5) * slicedir[1] * self.voxel_size[2])
-        zp = (self.corner[2] + (x + 0.5) * rowdir[2] * self.voxel_size[0] +
-             (y + 0.5) * coldir[2] * self.voxel_size[1] +
-             (z + 0.5) * slicedir[2] * self.voxel_size[2])
-        return xp,yp,zp
+        print "rowdir", rowdir
+        print "coldir", coldir
+        x = (self.corner[0] + (row + 0.5) * rowdir[0] * self.voxel_size[1] +
+             (col + 0.5) * coldir[0] * self.voxel_size[0] +
+             (slice + 0.5) * slicedir[0] * self.voxel_size[2])
+        y = (self.corner[1] + (row + 0.5) * rowdir[1] * self.voxel_size[1] +
+             (col + 0.5) * coldir[1] * self.voxel_size[0] +
+             (slice + 0.5) * slicedir[1] * self.voxel_size[2])
+        z = (self.corner[2] + (row + 0.5) * rowdir[2] * self.voxel_size[1] +
+             (col + 0.5) * coldir[2] * self.voxel_size[0] +
+             (slice + 0.5) * slicedir[2] * self.voxel_size[2])
+        return x,y,z
 
     def add_sphere(self, radius, center, stored_value = None, real_value = None, mode = 'set'):
         if real_value != None:
             assert stored_value == None
             stored_value = (real_value - self.rescale_intercept) / self.rescale_slope
         x,y,z = self.mgrid()
-        voxels = self.ct_data[(x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2]
-        print "x: {0}-{1}".format(x.min(), x.max())
-        print "y: {0}-{1}".format(y.min(), y.max())
-        print "z: {0}-{1}".format(z.min(), z.max())
-        print "sum voxels: {0}".format((voxels == voxels).sum())
+        voxels = (x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2
+        print voxels
         if mode == 'set':
-            voxels = stored_value
+            self.ct_data[voxels] = stored_value
         elif mode == 'add':
-            voxels += stored_value
+            self.ct_data[voxels] += stored_value
         elif mode == 'subtract':
-            voxels -= stored_value
+            self.ct_data[voxels] -= stored_value
         else:
             assert 'unknown mode'
 
@@ -138,13 +137,13 @@ class CTBuilder(object):
             assert stored_value == None
             stored_value = (real_value - self.rescale_intercept) / self.rescale_slope
         x,y,z = self.mgrid()
-        voxels = self.ct_data[(abs(x-center[0]) <= size[0]/2.0) * (abs(y-center[1]) <= size[1]/2.0) * (abs(z-center[2]) <= size[2]/2.0)]
+        voxels = (abs(x-center[0]) <= size[0]/2.0) * (abs(y-center[1]) <= size[1]/2.0) * (abs(z-center[2]) <= size[2]/2.0)
         if mode == 'set':
-            voxels = stored_value
+            self.ct_data[voxels] = stored_value
         elif mode == 'add':
-            voxels += stored_value
+            self.ct_data[voxels] += stored_value
         elif mode == 'subtract':
-            voxels -= stored_value
+            self.ct_data[voxels] -= stored_value
         else:
             assert 'unknown mode'
 
@@ -161,7 +160,7 @@ class CTBuilder(object):
         return self.datasets
 
 class StaticBeamBuilder(object):
-    def __init__(self, current_study, gantry_angle, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None):
+    def __init__(self, current_study, gantry_angle, meterset, nominal_beam_energy, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None):
         if table_top == None:
             table_top = TableTop()
         if table_top_eccentric == None:
@@ -171,36 +170,55 @@ class StaticBeamBuilder(object):
         self.patient_support_angle = patient_support_angle=0
         self.table_top = table_top
         self.table_top_eccentric = table_top_eccentric
+        self.meterset = meterset
+        self.nominal_beam_energy = nominal_beam_energy
         self.current_study = current_study
+        self.conform_calls = []
+        self.jaws = None
         self.built = False
+
+    def conform_to_circle(self, radius, center):
+        self.conform_calls.append(lambda beam: modules.conform_mlc_to_circle(beam, radius, center))
+
+    def conform_to_rectangle(self, x, y, center):
+        self.conform_calls.append(lambda beam: modules.conform_mlc_to_rectangle(beam, x, y, center))
 
     def build(self, rtplan, planbuilder):
         if self.built:
-            return self.beambuilder
+            return self.rtbeam
         self.built = True
-        self.beambuilder = modules.add_static_rt_beam(ds = rtplan, nleaves = planbuilder.num_leaves, leafwidths = planbuilder.leaf_widths, gantry_angle = self.gantry_angle, collimator_angle = self.collimator_angle, patient_support_angle = self.patient_support_angle, table_top = self.table_top, table_top_eccentric = self.table_top_eccentric, isocenter = planbuilder.isocenter, current_study = self.current_study)
-        return self.beambuilder
+        self.rtbeam = modules.add_static_rt_beam(ds = rtplan, nleaves = planbuilder.num_leaves, leafwidths = planbuilder.leaf_widths, gantry_angle = self.gantry_angle, collimator_angle = self.collimator_angle, patient_support_angle = self.patient_support_angle, table_top = self.table_top, table_top_eccentric = self.table_top_eccentric, isocenter = planbuilder.isocenter, nominal_beam_energy = self.nominal_beam_energy, current_study = self.current_study)
+        for call in self.conform_calls:
+            call(self.rtbeam)
+        if self.jaws == None:
+            modules.conform_jaws_to_mlc(self.rtbeam)
+        return self.rtbeam
 
 class StaticPlanBuilder(object):
-    def __init__(self, current_study, isocenter=None, num_leaves=None, leaf_widths=None):
+    def __init__(self, current_study, nominal_beam_energy=6, isocenter=None, num_leaves=None, leaf_widths=None, structure_set=None):
         self.isocenter = isocenter or [0,0,0]
         self.num_leaves = num_leaves or [10,40,10]
-        self.leaf_widths = leaf_widths or [1, 0.5, 1]
+        self.leaf_widths = leaf_widths or [10, 5, 10]
         self.beam_builders = []
         self.current_study = current_study
+        self.structure_set = structure_set
+        self.nominal_beam_energy = nominal_beam_energy
         self.built = False
 
-    def build_beam(self, gantry_angle, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None):
-        sbb = StaticBeamBuilder(current_study = self.current_study, gantry_angle = gantry_angle, collimator_angle = collimator_angle, patient_support_angle = patient_support_angle, table_top = table_top, table_top_eccentric = table_top_eccentric)
+    def build_beam(self, gantry_angle, meterset, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None):
+        sbb = StaticBeamBuilder(current_study = self.current_study, meterset = meterset, nominal_beam_energy = self.nominal_beam_energy, gantry_angle = gantry_angle, collimator_angle = collimator_angle, patient_support_angle = patient_support_angle, table_top = table_top, table_top_eccentric = table_top_eccentric)
         self.beam_builders.append(sbb)
         return sbb
 
     def build(self):
         if self.built:
             return self.datasets
-        rtplan = modules.build_rt_plan(self.current_study, self.isocenter)
+        rtplan = modules.build_rt_plan(self.current_study, self.isocenter, self.structure_set.build()[0])
+        assert len(rtplan.FractionGroupSequence) == 1
+        fraction_group = rtplan.FractionGroupSequence[0]
         for bb in self.beam_builders:
-            bb.build(rtplan, self)
+            rtbeam = bb.build(rtplan, self)
+            modules.add_beam_to_rt_fraction_group(fraction_group, rtbeam, bb.meterset)
         self.built = True
         self.datasets = [rtplan]
         return self.datasets
@@ -250,7 +268,6 @@ class StructureSetBuilder(object):
                                for X in [-1,1]
                                for Y in [-1,1]]
                                for Z in z[0,0,np.abs(z[0,0,:] - center[2]) < size[2]/2]])
-        print "contours", contours, z[0,0,:] - center[2]
         if roi_number == None:
             roi_number = 1
             for rb in self.roi_builders:
@@ -268,7 +285,6 @@ class StructureSetBuilder(object):
         if self.built:
             return self.datasets
         rs = modules.build_rt_structure_set(self.images.build(), self.current_study)
-        print [x.SOPInstanceUID for x in self.images.build()]
         for rb in self.roi_builders:
             rb.build(rs)
         self.built = True

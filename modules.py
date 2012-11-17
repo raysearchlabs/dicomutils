@@ -1,4 +1,5 @@
 import dicom, time, uuid, sys, datetime, os
+import numpy as np
 # Be careful to pass good fp numbers...
 if hasattr(dicom, 'config'):
     dicom.config.allow_DS_float = True
@@ -91,7 +92,7 @@ def get_default_rt_structure_set_dataset(ref_images, current_study):
     get_rt_roi_observations_module(ds)
     return ds
 
-def get_default_rt_plan_dataset(current_study, isocenter):
+def get_default_rt_plan_dataset(current_study, isocenter, structure_set=None):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyTime' not in current_study:
@@ -107,7 +108,7 @@ def get_default_rt_plan_dataset(current_study, isocenter):
     get_rt_series_module(ds, DT, TM, "RTPLAN")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
-    get_rt_general_plan_module(ds, DT, TM, current_study)
+    get_rt_general_plan_module(ds, DT, TM, structure_set)
     #get_rt_prescription_module(ds)
     #get_rt_tolerance_tables(ds)
     if 'PatientPosition' in current_study:
@@ -308,16 +309,16 @@ def get_rt_dose_module(ds, current_study):
     # ds.NormalizationPoint = [0,0,0]
     # ds.TissueHeterogeneityCorrection = "IMAGE" # or "ROI_OVERRIDE" or "WATER"
 
-def get_rt_general_plan_module(ds, DT, TM, current_study):
+def get_rt_general_plan_module(ds, DT, TM, structure_set=None, dose=None):
     # Type 1
     ds.RTPlanLabel = "Plan"
-    if 'RTSTRUCT' not in current_study:
+    if structure_set == None:
         ds.RTPlanGeometry = "TREATMENT_DEVICE"
     else:
         ds.RTPlanGeometry = "PATIENT"
         ds.ReferencedStructureSetSequence = [dicom.dataset.Dataset()]
         ds.ReferencedStructureSetSequence[0].ReferencedSOPClassUID = get_uid("RT Structure Set Storage")
-        ds.ReferencedStructureSetSequence[0].ReferencedSOPInstanceUID = current_study['RTSTRUCT'].SOPInstanceUID
+        ds.ReferencedStructureSetSequence[0].ReferencedSOPInstanceUID = structure_set.SOPInstanceUID
 
     # Type 2
     ds.RTPlanDate = DT
@@ -330,10 +331,10 @@ def get_rt_general_plan_module(ds, DT, TM, current_study):
     # ds.TreatmentProtocols = ""
     ds.PlanIntent = "RESEARCH"
     # ds.TreatmentSties = ""
-    if 'RTDOSE' in current_study:
+    if dose != None:
         ds.ReferencedDoseSequence = [dicom.dataset.Dataset()]
         ds.ReferencedDoseSequence[0].ReferencedSOPClassUID = get_uid("RT Dose Storage")
-        ds.ReferencedDoseSequence[0].ReferencedSOPInstanceUID = current_study['RTDOSE'].SOPInstanceUID
+        ds.ReferencedDoseSequence[0].ReferencedSOPInstanceUID = dose.SOPInstanceUID
     # ds.ReferencedRTPlanSequence = []
 
 
@@ -349,19 +350,23 @@ def get_rt_fraction_scheme_module(ds, nfractions):
     # fg.RepeatFractionCycleLength # T3
     # fg.FractionPattern # T3
     fg.NumberofBeams = len(ds.BeamSequence) # T1
-    if fg.NumberofBeams != 0:
-        fg.ReferencedBeamSequence = [dicom.dataset.Dataset() for i in range(fg.NumberofBeams)]
-        for i in range(fg.NumberofBeams):
-            refbeam = fg.ReferencedBeamSequence[i]
-            beam = ds.BeamSequence[i]
-            refbeam.ReferencedBeamNumber = beam.BeamNumber
-            # refbeam.BeamDoseSpecificationPoint = [0,0,0]  # T3
-            # refbeam.BeamDose = 10 # T3
-            # refbeam.BeamDosePointDepth  # T3
-            # refbeam.BeamDosePointEquivalentDepth # T3
-            # refbeam.BeamDosePointSSD # T3
-            refbeam.BeamMeterset = 100.0
+    fg.ReferencedBeamSequence = []
+    for beam in ds.BeamSequence:
+        add_beam_to_rt_fraction_group(fg, beam)
     fg.NumberofBrachyApplicationSetups = 0
+
+
+def add_beam_to_rt_fraction_group(fg, beam, beam_meterset):
+    refbeam = dicom.dataset.Dataset()
+    refbeam.ReferencedBeamNumber = beam.BeamNumber
+    # refbeam.BeamDoseSpecificationPoint = [0,0,0]  # T3
+    # refbeam.BeamDose = 10 # T3
+    # refbeam.BeamDosePointDepth  # T3
+    # refbeam.BeamDosePointEquivalentDepth # T3
+    # refbeam.BeamDosePointSSD # T3
+    refbeam.BeamMeterset = beam_meterset
+    fg.NumberofBeams += 1
+    fg.ReferencedBeamSequence.append(refbeam)
 
 def cumsum(i):
     """Yields len(i)+1 values from 0 to sum(i)"""
@@ -382,6 +387,118 @@ def get_rt_beams_module(ds, isocenter, current_study):
     """nleaves is a list [na, nb, nc, ...] and leafwidths is a list [wa, wb, wc, ...]
     so that there are na leaves with width wa followed by nb leaves with width wb etc."""
     ds.BeamSequence = []
+
+from decimal import Decimal
+
+from collections import defaultdict
+def getblds(blds):
+    d = defaultdict(lambda: None)
+    for bld in blds:
+        if hasattr(bld, 'RTBeamLimitingDeviceType'):
+            d[bld.RTBeamLimitingDeviceType] = bld
+    return d
+
+def nmin(it):
+    n = None
+    for i in it:
+        if n == None or i < n:
+            n = i
+    return n
+
+def nmax(it):
+    n = None
+    for i in it:
+        if n == None or i > n:
+            n = i
+    return n
+
+def conform_jaws_to_mlc(beam):
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+    for cp in beam.ControlPointSequence:
+        opentolerance = Decimal("0.5") # mm
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+
+            if bldp['MLCX'] != None and bldp['ASYMY'] != None:
+                min_open_leafi = nmin(i for i in range(nleaves)
+                                      if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                max_open_leafi = nmax(i for i in range(nleaves)
+                                      if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                if min_open_leafi != None and max_open_leafi != None:
+                    bldp['ASYMY'].LeafJawPositions = [bld['MLCX'].LeafPositionBoundaries[min_open_leafi],
+                                                      bld['MLCX'].LeafPositionBoundaries[max_open_leafi + 1]]
+            if bldp['MLCX'] != None and bldp['ASYMX'] != None:
+                min_open_leaf = min(bldp['MLCX'].LeafJawPositions[i] for i in range(nleaves)
+                                    if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                max_open_leaf = max(bldp['MLCX'].LeafJawPositions[i+nleaves] for i in range(nleaves)
+                                    if bldp['MLCX'].LeafJawPositions[i] <= bldp['MLCX'].LeafJawPositions[i+nleaves] - opentolerance)
+                bldp['ASYMX'].LeafJawPositions = [min_open_leaf, max_open_leaf]
+
+def conform_mlc_to_circle(beam, radius, center):
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+    for cp in beam.ControlPointSequence:
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+            for i in range(nleaves):
+                y = float((bld['MLCX'].LeafPositionBoundaries[i] + bld['MLCX'].LeafPositionBoundaries[i+1]) / 2)
+                if abs(y) < radius:
+                    bldp['MLCX'].LeafJawPositions[i] = Decimal(-np.sqrt(radius**2 - (y-center[1])**2) + center[0]).quantize(Decimal("0.01"))
+                    bldp['MLCX'].LeafJawPositions[i + nleaves] = Decimal(np.sqrt(radius**2 - (y-center[1])**2) + center[0]).quantize(Decimal("0.01"))
+
+def conform_mlc_to_rectangle(beam, x, y, center):
+    """Sets MLC to open at least x * y cm"""
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+    for cp in beam.ControlPointSequence:
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+            for i in range(nleaves):
+                if bld['MLCX'].LeafPositionBoundaries[i+1] > (center[1]-y/2.0) and bld['MLCX'].LeafPositionBoundaries[i] < (center[1]+y/2.0):
+                    bldp['MLCX'].LeafJawPositions[i] = Decimal(center[0] - x/2.0)
+                    bldp['MLCX'].LeafJawPositions[i + nleaves] = Decimal(center[0] + x/2.0)
+
+def conform_jaws_to_rectangle(beam, x, y, center):
+    """Sets jaws opening to x * y cm, centered at `center`"""
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+    for cp in beam.ControlPointSequence:
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+            bldp = getblds(cp.BeamLimitingDevicePositionSequence)
+            bldp['ASYMX'].LeafJawPositions = [Decimal(center[0] - x/2.0),
+                                              Decimal(center[0] + x/2.0)]
+            bldp['ASYMY'].LeafJawPositions = [Decimal(center[1] - y/2.0),
+                                              Decimal(center[1] + y/2.0)]
+
+#def conform_mlc_to_roi(beam, roi, current_study):
+#    for contour in roi.ContourSequence:
+#        for i in range(0, len(contour.ContourData) - 3, 3):
+#            pass
+
+def open_mlc_for_line_segment(lpb, lp, v1, v2):
+    if v1[1] > v2[1]:
+        v1,v2 = v2,v1
+    # line segment outside in y?
+    if v2[1] < lpb[0] or v1[1] > lpb[-1]:
+        return
+    nleaves = len(lpb)-1
+    for i in range(0,nleaves):
+        if lpb[i+1] < v1[1]:
+            continue
+        if lpb[i] > v2[1]:
+            break
+        if v1[1] < lpb[i]:
+            xstart = v1[0] + (v2[0]-v1[0]) * (lpb[i]-v1[1])/(v2[1]-v1[1])
+        else:
+            xstart = v1[0]
+        if v2[1] > lpb[i+1]:
+            xend = v2[0] - (v1[0]-v2[0]) * (lpb[i+1]-v2[1])/(v1[1]-v2[1])
+        else:
+            xend = v2[0]
+        lp[i] = min(lp[i], xstart, xend)
+        lp[i+nleaves] = max(lp[i+nleaves], xstart, xend)
+
 
 def zmax(g):
     try:
@@ -501,7 +618,7 @@ def get_structure_set_module(ds, DT, TM, ref_images, current_study):
 
     return ds
 
-def add_static_rt_beam(ds, nleaves, leafwidths, gantry_angle, collimator_angle, patient_support_angle, table_top, table_top_eccentric, isocenter, current_study):
+def add_static_rt_beam(ds, nleaves, leafwidths, gantry_angle, collimator_angle, patient_support_angle, table_top, table_top_eccentric, isocenter, nominal_beam_energy, current_study):
     beam_number = zmax(b.BeamNumber for b in ds.BeamSequence) + 1
     beam = dicom.dataset.Dataset()
     ds.BeamSequence.append(beam)
@@ -567,8 +684,7 @@ def add_static_rt_beam(ds, nleaves, leafwidths, gantry_angle, collimator_angle, 
             cp.BeamLimitingDevicePositionSequence[2].LeafJawPositions = [0,0]*sum(nleaves)
             cp.GantryAngle = gantry_angle
             cp.GantryRotationDirection = 'NONE'
-            if 'NominalEnergy' in current_study:
-                cp.NominalBeamEnergy = current_study['NominalEnergy']
+            cp.NominalBeamEnergy = nominal_beam_energy
             # cp.GantryPitchAngle = 0 # T3
             # cp.GantryPitchRotationDirection = "NONE" # T3
             cp.BeamLimitingDeviceAngle = collimator_angle
@@ -588,6 +704,7 @@ def add_static_rt_beam(ds, nleaves, leafwidths, gantry_angle, collimator_angle, 
             cp.IsocenterPosition = isocenter
             # cp.SurfaceEntryPoint = [0,0,0] # T3
             # cp.SourceToSurfaceDistance = 70 # T3
+    return beam
 
 
 def get_rt_ion_beams_module(ds, nbeams, collimator_angles, patient_support_angles, table_top, table_top_eccentric, isocenter, current_study):
@@ -691,11 +808,11 @@ def get_rt_ion_beams_module(ds, nbeams, collimator_angles, patient_support_angle
 
 
 
-def build_rt_plan(current_study, isocenter, **kwargs):
+def build_rt_plan(current_study, isocenter, structure_set=None, **kwargs):
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    rp = get_default_rt_plan_dataset(current_study, isocenter)
+    rp = get_default_rt_plan_dataset(current_study, isocenter, structure_set)
     rp.SeriesInstanceUID = seriesuid
     rp.StudyInstanceUID = studyuid
     rp.FrameofReferenceUID = FoRuid
