@@ -1,5 +1,6 @@
 import dicom, time, uuid, sys, datetime, os
 import numpy as np
+import coordinates
 # Be careful to pass good fp numbers...
 if hasattr(dicom, 'config'):
     dicom.config.allow_DS_float = True
@@ -49,7 +50,7 @@ def get_default_ct_dataset(sopinstanceuid, current_study):
     get_image_plane_module(ds)
     return ds
 
-def get_default_rt_dose_dataset(current_study):
+def get_default_rt_dose_dataset(current_study, rtplan):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyTime' not in current_study:
@@ -69,7 +70,7 @@ def get_default_rt_dose_dataset(current_study):
     get_general_image_module(ds, DT, TM)
     get_image_plane_module(ds)
     get_multi_frame_module(ds)
-    get_rt_dose_module(ds, current_study)
+    get_rt_dose_module(ds, rtplan)
     return ds
 
 def get_default_rt_structure_set_dataset(ref_images, current_study):
@@ -259,7 +260,7 @@ def get_multi_frame_module(ds):
     ds.NumberofFrames = 1
     ds.FrameIncrementPointer = dicom.datadict.Tag(dicom.datadict.tag_for_name("GridFrameOffsetVector"))
 
-def get_rt_dose_module(ds, current_study):
+def get_rt_dose_module(ds, rtplan=None):
     # Type 1C on PixelData
     ds.SamplesperPixel = 1
     ds.DoseGridScaling = 1.0
@@ -277,10 +278,10 @@ def get_rt_dose_module(ds, current_study):
 
     # Type 1C if Dose Summation Type is any of the enumerated values.
     ds.ReferencedRTPlanSequence = []
-    if 'RTPLAN' in current_study:
+    if rtplan != None:
         refplan = dicom.dataset.Dataset()
         refplan.ReferencedSOPClassUID = get_uid("RT Plan Storage")
-        refplan.ReferencedSOPInstanceUID = current_study['RTPLAN'].SOPInstanceUID
+        refplan.ReferencedSOPInstanceUID = rtplan.SOPInstanceUID
         ds.ReferencedRTPlanSequence.append(refplan)
 
     # Type 1C on multi-frame
@@ -389,6 +390,45 @@ def get_rt_beams_module(ds, isocenter, current_study):
     ds.BeamSequence = []
 
 from decimal import Decimal
+
+def get_dicom_to_bld_coordinate_transform(gantryAngle, gantryPitchAngle, beamLimitingDeviceAngle, patientSupportAngle, patientPosition, table_top, table_top_ecc, SAD, isocenter_d):
+    if patientPosition == 'HFS':
+        psi_p, phi_p, theta_p = 0,0,0
+    elif patientPosition == 'HFP':
+        psi_p, phi_p, theta_p = 0,180,0
+    elif patientPosition == 'FFS':
+        psi_p, phi_p, theta_p = 0,0,180
+    elif patientPosition == 'FFP':
+        psi_p, phi_p, theta_p = 180,0,0
+    elif patientPosition == 'HFDL':
+        psi_p, phi_p, theta_p = 0,90,0
+    elif patientPosition == 'HFDR':
+        psi_p, phi_p, theta_p = 0,270,0
+    elif patientPosition == 'FFDL':
+        psi_p, phi_p, theta_p = 180,270,0
+    elif patientPosition == 'FFDR':
+        psi_p, phi_p, theta_p = 180,90,0
+    else:
+        assert False, "Unknown patient position %s!" % (patientPosition,)
+
+    # Find the isocenter in patient coordinate system, had the patient system not been translated
+    isocenter_p0 = (coordinates.Mfs(patientSupportAngle)
+                    * coordinates.Mse(table_top_ecc.Ls, table_top_ecc.theta_e)
+                    * coordinates.Met(table_top.Tx, table_top.Ty, table_top.Tz, table_top.psi_t, table_top.phi_t)
+                    * coordinates.Mtp(0, 0, 0, psi_p, phi_p, theta_p)) * [[0],[0],[0],[1]]
+    # Find the coordinates in the patient system of the desired isocenter
+    isocenter_p1 = np.linalg.inv(coordinates.Mpd()) * np.array([float(isocenter_d[0]), float(isocenter_d[1]), float(isocenter_d[2]), 1.0]).reshape((4,1))
+    # Compute the patient coordinate system translation
+    Px,Py,Pz,_ = isocenter_p0 - isocenter_p1
+
+    M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
+         * coordinates.Mfg(gantryPitchAngle, gantryAngle)
+         * np.linalg.inv(coordinates.Mfs(patientSupportAngle))
+         * np.linalg.inv(coordinates.Mse(table_top_ecc.Ls, table_top_ecc.theta_e))
+         * np.linalg.inv(coordinates.Met(table_top.Tx, table_top.Ty, table_top.Tz, table_top.psi_t, table_top.phi_t))
+         * np.linalg.inv(coordinates.Mtp(Px, Py, Pz, psi_p, phi_p, theta_p))
+         * np.linalg.inv(coordinates.Mpd()))
+    return M
 
 from collections import defaultdict
 def getblds(blds):
@@ -821,26 +861,27 @@ def build_rt_plan(current_study, isocenter, structure_set=None, **kwargs):
             setattr(rp, k, v)
     return rp
 
-def build_rt_dose(doseData, voxelGrid, current_study, **kwargs):
-    nVoxels = doseData.shape
+def build_rt_dose(dose_data, voxel_size, current_study, rtplan, dose_grid_scaling, **kwargs):
+    nVoxels = dose_data.shape
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    rd = get_default_rt_dose_dataset(current_study)
+    rd = get_default_rt_dose_dataset(current_study, rtplan)
     rd.SeriesInstanceUID = seriesuid
     rd.StudyInstanceUID = studyuid
     rd.FrameofReferenceUID = FoRuid
     rd.Rows = nVoxels[1]
     rd.Columns = nVoxels[0]
     rd.NumberofFrames = nVoxels[2]
-    rd.PixelSpacing = [voxelGrid[1], voxelGrid[0]]
-    rd.SliceThickness = voxelGrid[2]
-    rd.GridFrameOffsetVector = [z*voxelGrid[2] for z in range(nVoxels[2])]
-    rd.ImagePositionPatient = [-(nVoxels[0]-1)*voxelGrid[0]/2.0,
-                               -(nVoxels[1]-1)*voxelGrid[1]/2.0,
-                               -(nVoxels[2]-1)*voxelGrid[2]/2.0]
+    rd.PixelSpacing = [voxel_size[1], voxel_size[0]]
+    rd.SliceThickness = voxel_size[2]
+    rd.GridFrameOffsetVector = [z*voxel_size[2] for z in range(nVoxels[2])]
+    rd.DoseGridScaling = dose_grid_scaling
+    rd.ImagePositionPatient = [-(nVoxels[0]-1)*voxel_size[0]/2.0,
+                               -(nVoxels[1]-1)*voxel_size[1]/2.0,
+                               -(nVoxels[2]-1)*voxel_size[2]/2.0]
 
-    rd.PixelData=doseData.tostring(order='F')
+    rd.PixelData=dose_data.tostring(order='F')
     for k, v in kwargs.iteritems():
         if v != None:
             setattr(rd, k, v)

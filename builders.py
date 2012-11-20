@@ -16,8 +16,76 @@ class TableTopEcc(object):
         self.Ls = Ls
         self.theta_e = theta_e
 
+class ImageBuilder(object):
+    @property
+    def gridsize(self):
+        return np.array([self.num_voxels[0] * self.voxel_size[0],
+                         self.num_voxels[1] * self.voxel_size[1],
+                         self.num_voxels[2] * self.voxel_size[2]])
+
+    @property
+    def column_direction(self):
+        return self.ImageOrientationPatient[:3]
+
+    @property
+    def row_direction(self):
+        return self.ImageOrientationPatient[3:]
+
+    def mgrid(self):
+        col,row,slice=np.mgrid[:self.num_voxels[0],:self.num_voxels[1],:self.num_voxels[2]]
+        coldir = self.column_direction
+        rowdir = self.row_direction
+        slicedir = self.slice_direction
+        x = (self.corner[0] + (row + 0.5) * rowdir[0] * self.voxel_size[1] +
+             (col + 0.5) * coldir[0] * self.voxel_size[0] +
+             (slice + 0.5) * slicedir[0] * self.voxel_size[2])
+        y = (self.corner[1] + (row + 0.5) * rowdir[1] * self.voxel_size[1] +
+             (col + 0.5) * coldir[1] * self.voxel_size[0] +
+             (slice + 0.5) * slicedir[1] * self.voxel_size[2])
+        z = (self.corner[2] + (row + 0.5) * rowdir[2] * self.voxel_size[1] +
+             (col + 0.5) * coldir[2] * self.voxel_size[0] +
+             (slice + 0.5) * slicedir[2] * self.voxel_size[2])
+        return x,y,z
+
+    def clear(self, real_value = None, stored_value = None):
+        if real_value != None:
+            assert stored_value == None
+            stored_value = self.real_value_to_stored_value(real_value)
+        self.pixel_array[:] = stored_value
+
+
+    def add_sphere(self, radius, center, stored_value = None, real_value = None, mode = 'set'):
+        if real_value != None:
+            assert stored_value == None
+            stored_value = self.real_value_to_stored_value(real_value)
+        x,y,z = self.mgrid()
+        voxels = (x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2
+        if mode == 'set':
+            self.pixel_array[voxels] = stored_value
+        elif mode == 'add':
+            self.pixel_array[voxels] += stored_value
+        elif mode == 'subtract':
+            self.pixel_array[voxels] -= stored_value
+        else:
+            assert 'unknown mode'
+
+    def add_box(self, size, center, stored_value = None, real_value = None, mode = 'set'):
+        if real_value != None:
+            assert stored_value == None
+            stored_value = (real_value - self.rescale_intercept) / self.rescale_slope
+        x,y,z = self.mgrid()
+        voxels = (abs(x-center[0]) <= size[0]/2.0) * (abs(y-center[1]) <= size[1]/2.0) * (abs(z-center[2]) <= size[2]/2.0)
+        if mode == 'set':
+            self.pixel_array[voxels] = stored_value
+        elif mode == 'add':
+            self.pixel_array[voxels] += stored_value
+        elif mode == 'subtract':
+            self.pixel_array[voxels] -= stored_value
+        else:
+            assert 'unknown mode'
+
 class StudyBuilder(object):
-    def __init__(self, patient_position, patient_id, patients_name = "", patients_birthdate = ""):
+    def __init__(self, patient_position="HFS", patient_id="", patients_name = "", patients_birthdate = ""):
         self.modalityorder = ["CT", "RTSTRUCT", "RTPLAN", "RTDOSE"]
         self.current_study = {}
         self.current_study['PatientID'] = patient_id
@@ -27,19 +95,45 @@ class StudyBuilder(object):
         self.seriesbuilders = defaultdict(lambda: [])
         self.built = False
 
-    def build_ct(self, **kwargs):
-        b = CTBuilder(self.current_study, **kwargs)
+    def build_ct(self, num_voxels, voxel_size, corner=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
+        b = CTBuilder(self.current_study, num_voxels, voxel_size, corner=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None)
         self.seriesbuilders['CT'].append(b)
         return b
 
-    def build_static_plan(self, structure_set=None, **kwargs):
-        b = StaticPlanBuilder(self.current_study, structure_set=structure_set, **kwargs)
+    def build_static_plan(self, nominal_beam_energy=6, isocenter=None, num_leaves=None, leaf_widths=None, structure_set=None):
+        if structure_set == None and len(self.seriesbuilders['RTSTRUCT']) == 1:
+            structure_set = self.seriesbuilders['RTSTRUCT'][0]
+        b = StaticPlanBuilder(current_study=self.current_study,
+                              nominal_beam_energy=nominal_beam_energy, isocenter=isocenter,
+                              num_leaves=num_leaves, leaf_widths=leaf_widths, structure_set=structure_set)
         self.seriesbuilders['RTPLAN'].append(b)
         return b
 
-    def build_structure_set(self, images, **kwargs):
-        b = StructureSetBuilder(self.current_study, images=images, **kwargs)
+    def build_structure_set(self, images=None):
+        if images == None and len(self.seriesbuilders['CT']) == 1:
+            images = self.seriesbuilders['CT'][0]
+        b = StructureSetBuilder(self.current_study, images=images)
         self.seriesbuilders['RTSTRUCT'].append(b)
+        return b
+
+    def build_dose(self, planbuilder=None, num_voxels=None, voxel_size=None, corner=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
+        if planbuilder == None and len(self.seriesbuilders['RTPLAN']) == 1:
+            planbuilder = self.seriesbuilders['RTPLAN'][0]
+        if (planbuilder != None
+            and planbuilder.structure_set != None
+            and planbuilder.structure_set.images != None):
+            images = planbuilder.structure_set.images
+            if num_voxels == None and voxel_size == None and corner == None:
+                num_voxels = images.num_voxels
+                voxel_size = images.voxel_size
+                corner = images.corner
+            if column_direction == None and row_direction == None:
+                column_direction, row_direction = images.column_direction, images.row_direction
+            if slice_direction == None:
+                slice_direction = images.slice_direction
+
+        b = DoseBuilder(current_study=self.current_study, planbuilder=planbuilder, num_voxels=num_voxels, voxel_size=voxel_size, corner=corner, dose_grid_scaling=dose_grid_scaling, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
+        self.seriesbuilders['RTDOSE'].append(b)
         return b
 
     def build(self):
@@ -56,21 +150,22 @@ class StudyBuilder(object):
     def write(self, outdir='.', print_filenames=False):
         for modality in self.modalityorder:
             for sb in self.seriesbuilders[modality]:
+                print modality, sb
                 for ds in sb.build():
                     dicom.write_file(os.path.join(outdir, ds.filename), ds)
                     if print_filenames:
                         print ds.filename
 
-class CTBuilder(object):
-    def __init__(self, current_study, voxels, voxel_size, corner=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
-        self.voxels = voxels
+class CTBuilder(ImageBuilder):
+    def __init__(self, current_study, num_voxels, voxel_size, corner=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
+        self.num_voxels = num_voxels
         self.voxel_size = voxel_size
         self.rescale_slope = rescale_slope
         if corner == None:
             corner = -self.gridsize / 2.0
         self.corner = np.array(corner)
         self.rescale_intercept = rescale_intercept
-        self.ct_data = np.zeros(self.voxels, dtype=np.int16)
+        self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
         if column_direction == None or row_direction == None:
             assert column_direction == None and row_direction == None
             column_direction = [1,0,0]
@@ -83,74 +178,13 @@ class CTBuilder(object):
         self.current_study = current_study
         self.built = False
 
-    @property
-    def gridsize(self):
-        return np.array([self.voxels[0] * self.voxel_size[0],
-                         self.voxels[1] * self.voxel_size[1],
-                         self.voxels[2] * self.voxel_size[2]])
-
-    def real_valueToStoredValue(self, real_value):
+    def real_value_to_stored_value(self, real_value):
         return (real_value - self.rescale_intercept) / self.rescale_slope
-
-    def clear(self, real_value = None, stored_value = None):
-        if real_value != None:
-            assert stored_value == None
-            stored_value = (real_value - self.rescale_intercept) / self.rescale_slope
-        self.ct_data[:] = stored_value
-
-    def mgrid(self):
-        col,row,slice=np.mgrid[:self.voxels[0],:self.voxels[1],:self.voxels[2]]
-        coldir = self.ImageOrientationPatient[:3]
-        rowdir = self.ImageOrientationPatient[3:]
-        slicedir = self.slice_direction
-        print "rowdir", rowdir
-        print "coldir", coldir
-        x = (self.corner[0] + (row + 0.5) * rowdir[0] * self.voxel_size[1] +
-             (col + 0.5) * coldir[0] * self.voxel_size[0] +
-             (slice + 0.5) * slicedir[0] * self.voxel_size[2])
-        y = (self.corner[1] + (row + 0.5) * rowdir[1] * self.voxel_size[1] +
-             (col + 0.5) * coldir[1] * self.voxel_size[0] +
-             (slice + 0.5) * slicedir[1] * self.voxel_size[2])
-        z = (self.corner[2] + (row + 0.5) * rowdir[2] * self.voxel_size[1] +
-             (col + 0.5) * coldir[2] * self.voxel_size[0] +
-             (slice + 0.5) * slicedir[2] * self.voxel_size[2])
-        return x,y,z
-
-    def add_sphere(self, radius, center, stored_value = None, real_value = None, mode = 'set'):
-        if real_value != None:
-            assert stored_value == None
-            stored_value = (real_value - self.rescale_intercept) / self.rescale_slope
-        x,y,z = self.mgrid()
-        voxels = (x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2
-        print voxels
-        if mode == 'set':
-            self.ct_data[voxels] = stored_value
-        elif mode == 'add':
-            self.ct_data[voxels] += stored_value
-        elif mode == 'subtract':
-            self.ct_data[voxels] -= stored_value
-        else:
-            assert 'unknown mode'
-
-    def add_box(self, size, center, stored_value = None, real_value = None, mode = 'set'):
-        if real_value != None:
-            assert stored_value == None
-            stored_value = (real_value - self.rescale_intercept) / self.rescale_slope
-        x,y,z = self.mgrid()
-        voxels = (abs(x-center[0]) <= size[0]/2.0) * (abs(y-center[1]) <= size[1]/2.0) * (abs(z-center[2]) <= size[2]/2.0)
-        if mode == 'set':
-            self.ct_data[voxels] = stored_value
-        elif mode == 'add':
-            self.ct_data[voxels] += stored_value
-        elif mode == 'subtract':
-            self.ct_data[voxels] -= stored_value
-        else:
-            assert 'unknown mode'
 
     def build(self):
         if self.built:
             return self.datasets
-        cts = modules.build_ct(self.ct_data, self.voxel_size, current_study = self.current_study)
+        cts = modules.build_ct(self.pixel_array, self.voxel_size, current_study = self.current_study)
         x,y,z = self.mgrid()
         for slicei in range(len(cts)):
             cts[slicei].ImagePositionPatient = [x[0,0,slicei],y[0,0,slicei],z[0,0,slicei]]
@@ -182,6 +216,12 @@ class StaticBeamBuilder(object):
 
     def conform_to_rectangle(self, x, y, center):
         self.conform_calls.append(lambda beam: modules.conform_mlc_to_rectangle(beam, x, y, center))
+
+    def conform_jaws_to_rectangle(self, x, y, center):
+        self.conform_calls.append(lambda beam: modules.conform_jaws_to_rectangle(beam, x, y, center))
+
+    def conform_jaws_to_mlc(self):
+        self.conform_calls.append(lambda beam: modules.conform_jaws_to_mlc(beam))
 
     def build(self, rtplan, planbuilder):
         if self.built:
@@ -289,4 +329,94 @@ class StructureSetBuilder(object):
             rb.build(rs)
         self.built = True
         self.datasets = [rs]
+        return self.datasets
+
+from decimal import Decimal
+
+class DoseBuilder(ImageBuilder):
+    def __init__(self, current_study, planbuilder, num_voxels, voxel_size, corner=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
+        self.current_study = current_study
+        self.planbuilder = planbuilder
+        self.num_voxels = num_voxels
+        self.voxel_size = voxel_size
+        self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
+        if corner == None:
+            corner = -self.gridsize / 2.0
+        self.corner = np.array(corner)
+        if column_direction == None or row_direction == None:
+            assert column_direction == None and row_direction == None
+            column_direction = [1,0,0]
+            row_direction = [0,1,0]
+        if slice_direction == None:
+            slice_direction = np.cross(column_direction, row_direction)
+        slice_direction = slice_direction / np.linalg.norm(slice_direction)
+        self.ImageOrientationPatient = column_direction + row_direction
+        self.slice_direction = slice_direction
+        self.dose_grid_scaling = dose_grid_scaling
+        self.built = False
+
+    def real_value_to_stored_value(self, real_value):
+        return real_value / self.dose_grid_scaling
+
+    def add_lightfield(self, beam, weight):
+        x,y,z = self.mgrid()
+        bld = modules.getblds(beam.BeamLimitingDeviceSequence)
+        gantry_angle = None
+        gantry_pitch_angle = 0
+        isocenter = [0,0,0]
+        beam_limiting_device_angle = Decimal(0)
+        table_top = TableTop()
+        table_top_ecc = TableTopEcc()
+        patient_position = 'HFS'
+        patient_support_angle = 0
+        if hasattr(beam, 'SourceAxisDistance'):
+            sad = beam.SourceAxisDistance
+        else:
+            sad = 1000
+        for cp in beam.ControlPointSequence:
+            if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+                bldp = modules.getblds(cp.BeamLimitingDevicePositionSequence)
+            gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
+            gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_angle)
+            beam_limiting_device_angle = getattr(cp, 'BeamLimitingDeviceAngle', beam_limiting_device_angle)
+            patient_support_angle = getattr(cp, 'PatientSupportAngle', patient_support_angle)
+            isocenter = getattr(cp, 'IsocenterPosition', isocenter)
+            table_top_ecc.Ls = getattr(cp, 'TableTopEccentricAxisDistance', table_top_ecc.Ls)
+            table_top_ecc.theta_e = getattr(cp, 'TableTopEccentricAngle', table_top_ecc.theta_e)
+            table_top.psi_t = getattr(cp, 'TableTopPitchAngle', table_top.psi_t)
+            table_top.phi_t = getattr(cp, 'TableTopRollAngle', table_top.phi_t)
+            table_top.Tx = getattr(cp, 'TableTopLateralPosition', table_top.Tx)
+            table_top.Ty = getattr(cp, 'TableTopLongitudinalPosition', table_top.Ty)
+            table_top.Tz = getattr(cp, 'TableTopVerticalPosition', table_top.Tz)
+            patient_position = getattr(cp, 'PatientPosition', patient_position)
+
+            table_top = TableTop()
+            Mdb = modules.get_dicom_to_bld_coordinate_transform(gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
+                                                                patient_support_angle, patient_position,
+                                                                table_top, table_top_ecc, sad, isocenter)
+            coords = np.array([x.ravel(),
+                               y.ravel(),
+                               z.ravel(),
+                               np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
+            c = Mdb * coords
+            # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
+            c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
+            nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+            for i in range(nleaves):
+                self.pixel_array.ravel()[(c2[0,:] >= max(float(bldp['ASYMX'].LeafJawPositions[0]),
+                                              float(bldp['MLCX'].LeafJawPositions[i])))
+                               * (c2[0,:] <= min(float(bldp['ASYMX'].LeafJawPositions[1]),
+                                                 float(bldp['MLCX'].LeafJawPositions[i + nleaves])))
+                               * (c2[1,:] > max(float(bldp['ASYMY'].LeafJawPositions[0]),
+                                                 float(bld['MLCX'].LeafPositionBoundaries[i])))
+                               * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
+                                                 float(bld['MLCX'].LeafPositionBoundaries[i+1])))] += 1
+
+    def build(self):
+        if self.built:
+            return self.datasets
+        rd = modules.build_rt_dose(self.pixel_array, self.voxel_size, self.current_study,
+                                   self.planbuilder.build()[0], self.dose_grid_scaling)
+        self.built = True
+        self.datasets = [rd]
         return self.datasets
