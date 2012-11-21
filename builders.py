@@ -308,6 +308,19 @@ class StructureSetBuilder(object):
                                for X in [-1,1]
                                for Y in [-1,1]]
                                for Z in z[0,0,np.abs(z[0,0,:] - center[2]) < size[2]/2]])
+        return self.add_contours(contours, name, interpreted_type, roi_number)
+
+    def add_sphere(self, radius, center, name, interpreted_type, roi_number = None, ntheta = 12):
+        x,y,z = self.images.mgrid()
+        contours = np.array([[[np.sqrt(radius**2 - (Z-center[2])**2) * np.cos(theta) + center[0],
+                               np.sqrt(radius**2 - (Z-center[2])**2) * np.sin(theta) + center[1],
+                               Z]
+                              for theta in np.linspace(0, 2*np.pi, ntheta, endpoint=False)]
+                             for Z in z[0,0,np.abs(z[0,0,:] - center[2]) < radius]])
+        return self.add_contours(contours, name, interpreted_type, roi_number)
+
+
+    def add_contours(self, contours, name, interpreted_type, roi_number = None):
         if roi_number == None:
             roi_number = 1
             for rb in self.roi_builders:
@@ -318,8 +331,6 @@ class StructureSetBuilder(object):
         self.roi_builders.append(rb)
         return rb
 
-    def add_sphere(self, radius, center, name, interpreted_type):
-        pass
 
     def build(self):
         if self.built:
