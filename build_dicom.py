@@ -39,6 +39,7 @@ parser.add_argument('--nominal-energy', dest='nominal_energy', default=None,
 parser.add_argument('--values', dest='values', default=[], action='append', metavar='VALUE | SHAPE{,PARAMETERS}',
                     help="""Set the Hounsfield or dose values in a volume to the given value.\n\n\n
                     For syntax, see the forthcoming documentation or the source code...""")
+parser.add_argument('--center', dest='center', default="[0;0;0]", help="""Center of the image, in dicom patient coordinates.""")
 parser.add_argument('--sad', dest='sad', default=1000, help="The Source to Axis distance.")
 parser.add_argument('--structure', dest='structures', default=[], action='append', metavar='SHAPE{,PARAMETERS}',
                     help="""Add a structure to the current list of structure sets.
@@ -77,12 +78,14 @@ if not os.path.exists(args.outdir):
 for study in args.studies:
     sb = StudyBuilder()
     for series in study:
+        if series.center.__class__ is str:
+            series.center = [float(b) for b in series.center.lstrip('[').rstrip(']').split(";")]
         if series.modality == "CT":
             if 'PatientPosition' not in sb.current_study:
                 parser.error("Patient position must be specified when writing CT images!")
-            ib = sb.build_ct(num_voxels=num_voxels, voxel_size=voxel_size)
+            ib = sb.build_ct(num_voxels=num_voxels, voxel_size=voxel_size, center=np.array(series.center))
         elif series.modality == "RTDOSE":
-            ib = sb.build_dose(num_voxels=num_voxels, voxel_size=voxel_size)
+            ib = sb.build_dose(num_voxels=num_voxels, voxel_size=voxel_size, center=np.array(series.center))
         elif series.modality == "RTPLAN":
             isocenter = [float(b) for b in series.isocenter.lstrip('[').rstrip(']').split(";")]
             rp = sb.build_static_plan(nominal_beam_energy=series.nominal_energy, isocenter = isocenter)

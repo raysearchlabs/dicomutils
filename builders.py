@@ -2,6 +2,7 @@ import numpy as np
 import modules
 from collections import defaultdict
 import dicom, os
+from pytools import memoize
 
 class TableTop(object):
     def __init__(self, psi_t=0, phi_t=0, Tx=0, Ty=0, Tz=0):
@@ -32,19 +33,24 @@ class ImageBuilder(object):
         return self.ImageOrientationPatient[3:]
 
     def mgrid(self):
-        col,row,slice=np.mgrid[:self.num_voxels[0],:self.num_voxels[1],:self.num_voxels[2]]
         coldir = self.column_direction
         rowdir = self.row_direction
         slicedir = self.slice_direction
-        x = (self.corner[0] + (row + 0.5) * rowdir[0] * self.voxel_size[1] +
+        if hasattr(self, '_last_mgrid_params') and (coldir, rowdir, slicedir, self.num_voxels, self.center, self.voxel_size) == self._last_mgrid_params:
+            return self._last_mgrid
+        self._last_mgrid_params = (coldir, rowdir, slicedir, self.num_voxels, self.center, self.voxel_size)
+        col,row,slice=np.mgrid[:self.num_voxels[0],:self.num_voxels[1],:self.num_voxels[2]]
+        corner = self.center - self.gridsize / 2.0
+        x = (corner[0] + (row + 0.5) * rowdir[0] * self.voxel_size[1] +
              (col + 0.5) * coldir[0] * self.voxel_size[0] +
              (slice + 0.5) * slicedir[0] * self.voxel_size[2])
-        y = (self.corner[1] + (row + 0.5) * rowdir[1] * self.voxel_size[1] +
+        y = (corner[1] + (row + 0.5) * rowdir[1] * self.voxel_size[1] +
              (col + 0.5) * coldir[1] * self.voxel_size[0] +
              (slice + 0.5) * slicedir[1] * self.voxel_size[2])
-        z = (self.corner[2] + (row + 0.5) * rowdir[2] * self.voxel_size[1] +
+        z = (corner[2] + (row + 0.5) * rowdir[2] * self.voxel_size[1] +
              (col + 0.5) * coldir[2] * self.voxel_size[0] +
              (slice + 0.5) * slicedir[2] * self.voxel_size[2])
+        self._last_mgrid = (x,y,z)
         return x,y,z
 
     def clear(self, real_value = None, stored_value = None):
@@ -95,8 +101,8 @@ class StudyBuilder(object):
         self.seriesbuilders = defaultdict(lambda: [])
         self.built = False
 
-    def build_ct(self, num_voxels, voxel_size, corner=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
-        b = CTBuilder(self.current_study, num_voxels, voxel_size, corner=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None)
+    def build_ct(self, num_voxels, voxel_size, center=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
+        b = CTBuilder(self.current_study, num_voxels, voxel_size, center=center, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
         self.seriesbuilders['CT'].append(b)
         return b
 
@@ -116,23 +122,23 @@ class StudyBuilder(object):
         self.seriesbuilders['RTSTRUCT'].append(b)
         return b
 
-    def build_dose(self, planbuilder=None, num_voxels=None, voxel_size=None, corner=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
+    def build_dose(self, planbuilder=None, num_voxels=None, voxel_size=None, center=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
         if planbuilder == None and len(self.seriesbuilders['RTPLAN']) == 1:
             planbuilder = self.seriesbuilders['RTPLAN'][0]
         if (planbuilder != None
             and planbuilder.structure_set != None
             and planbuilder.structure_set.images != None):
             images = planbuilder.structure_set.images
-            if num_voxels == None and voxel_size == None and corner == None:
+            if num_voxels == None and voxel_size == None and center == None:
                 num_voxels = images.num_voxels
                 voxel_size = images.voxel_size
-                corner = images.corner
+                center = images.center
             if column_direction == None and row_direction == None:
                 column_direction, row_direction = images.column_direction, images.row_direction
             if slice_direction == None:
                 slice_direction = images.slice_direction
 
-        b = DoseBuilder(current_study=self.current_study, planbuilder=planbuilder, num_voxels=num_voxels, voxel_size=voxel_size, corner=corner, dose_grid_scaling=dose_grid_scaling, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
+        b = DoseBuilder(current_study=self.current_study, planbuilder=planbuilder, num_voxels=num_voxels, voxel_size=voxel_size, center=center, dose_grid_scaling=dose_grid_scaling, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
         self.seriesbuilders['RTDOSE'].append(b)
         return b
 
@@ -157,13 +163,13 @@ class StudyBuilder(object):
                         print ds.filename
 
 class CTBuilder(ImageBuilder):
-    def __init__(self, current_study, num_voxels, voxel_size, corner=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
+    def __init__(self, current_study, num_voxels, voxel_size, center=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
         self.num_voxels = num_voxels
         self.voxel_size = voxel_size
         self.rescale_slope = rescale_slope
-        if corner == None:
-            corner = -self.gridsize / 2.0
-        self.corner = np.array(corner)
+        if center == None:
+            center = [0,0,0]
+        self.center = np.array(center)
         self.rescale_intercept = rescale_intercept
         self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
         if column_direction == None or row_direction == None:
@@ -184,7 +190,7 @@ class CTBuilder(ImageBuilder):
     def build(self):
         if self.built:
             return self.datasets
-        cts = modules.build_ct(self.pixel_array, self.voxel_size, current_study = self.current_study)
+        cts = modules.build_ct(ct_data = self.pixel_array, voxel_size = self.voxel_size, center = self.center, current_study = self.current_study)
         x,y,z = self.mgrid()
         for slicei in range(len(cts)):
             cts[slicei].ImagePositionPatient = [x[0,0,slicei],y[0,0,slicei],z[0,0,slicei]]
@@ -293,9 +299,8 @@ class StructureSetBuilder(object):
         self.built = False
 
     def add_external_box(self, name="External", roi_number=None):
-        corner = self.images.corner
         self.add_box(size = self.images.gridsize,
-                     center = self.images.corner + self.images.gridsize / 2,
+                     center = self.images.center,
                      name = name,
                      interpreted_type = "EXTERNAL",
                      roi_number = roi_number)
@@ -307,7 +312,8 @@ class StructureSetBuilder(object):
                                Z]
                                for X in [-1,1]
                                for Y in [-1,1]]
-                               for Z in z[0,0,np.abs(z[0,0,:] - center[2]) < size[2]/2]])
+                               for Z in z[0,0,:] if ((Z - center[2]) >= -size[2]/2 and
+                                                     (Z - center[2]) < size[2]/2)])
         return self.add_contours(contours, name, interpreted_type, roi_number)
 
     def add_sphere(self, radius, center, name, interpreted_type, roi_number = None, ntheta = 12):
@@ -345,15 +351,15 @@ class StructureSetBuilder(object):
 from decimal import Decimal
 
 class DoseBuilder(ImageBuilder):
-    def __init__(self, current_study, planbuilder, num_voxels, voxel_size, corner=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
+    def __init__(self, current_study, planbuilder, num_voxels, voxel_size, center=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
         self.current_study = current_study
         self.planbuilder = planbuilder
         self.num_voxels = num_voxels
         self.voxel_size = voxel_size
         self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
-        if corner == None:
-            corner = -self.gridsize / 2.0
-        self.corner = np.array(corner)
+        if center == None:
+            center = [0,0,0]
+        self.center = np.array(center)
         if column_direction == None or row_direction == None:
             assert column_direction == None and row_direction == None
             column_direction = [1,0,0]
@@ -426,7 +432,7 @@ class DoseBuilder(ImageBuilder):
     def build(self):
         if self.built:
             return self.datasets
-        rd = modules.build_rt_dose(self.pixel_array, self.voxel_size, self.current_study,
+        rd = modules.build_rt_dose(self.pixel_array, self.voxel_size, self.center, self.current_study,
                                    self.planbuilder.build()[0], self.dose_grid_scaling)
         self.built = True
         self.datasets = [rd]

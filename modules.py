@@ -861,7 +861,7 @@ def build_rt_plan(current_study, isocenter, structure_set=None, **kwargs):
             setattr(rp, k, v)
     return rp
 
-def build_rt_dose(dose_data, voxel_size, current_study, rtplan, dose_grid_scaling, **kwargs):
+def build_rt_dose(dose_data, voxel_size, center, current_study, rtplan, dose_grid_scaling, **kwargs):
     nVoxels = dose_data.shape
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
@@ -903,8 +903,8 @@ def build_rt_structure_set(ref_images, current_study, **kwargs):
 
 
 
-def build_ct(ctData, voxel_size, current_study, **kwargs):
-    nVoxels = ctData.shape
+def build_ct(ct_data, voxel_size, center, current_study, **kwargs):
+    nVoxels = ct_data.shape
     ctbaseuid = generate_uid()
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
@@ -920,10 +920,10 @@ def build_ct(ctData, voxel_size, current_study, **kwargs):
         ct.Columns = nVoxels[0]
         ct.PixelSpacing = [voxel_size[1], voxel_size[0]]
         ct.SliceThickness = voxel_size[2]
-        ct.ImagePositionPatient = [-(nVoxels[0]-1)*voxel_size[0]/2.0,
-                                   -(nVoxels[1]-1)*voxel_size[1]/2.0,
-                                   -(nVoxels[2]-1)*voxel_size[2]/2.0 + z*voxel_size[2]]
-        ct.PixelData=ctData[:,:,z].tostring(order='F')
+        ct.ImagePositionPatient = [center[0]-(nVoxels[0]-1)*voxel_size[0]/2.0,
+                                   center[1]-(nVoxels[1]-1)*voxel_size[1]/2.0,
+                                   center[2]-(nVoxels[2]-1)*voxel_size[2]/2.0 + z*voxel_size[2]]
+        ct.PixelData=ct_data[:,:,z].tostring(order='F')
         if 'PatientPosition' in current_study:
             ct.PatientPosition = current_study['PatientPosition']
         for k, v in kwargs.iteritems():
