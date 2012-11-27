@@ -20,7 +20,7 @@ Generate a 50cm x 50cm x 50cm water phantom CT data with 5mm resolution and a RT
 
 ```bash
 $ ./build_dicom.py \
-      --patient-position HFS --values 1024 --voxelsize 5,5,5 --voxels 100,100,100 --modality CT \
+      --patient-position HFS --values 0 --voxelsize 5,5,5 --voxels 100,100,100 --modality CT \
       --structure external --modality RTSTRUCT
 ```
 
@@ -31,8 +31,8 @@ and a lightfield "dose":
 
 ```bash
 $ ./build_dicom.py \
-      --patient-position HFS --values 1024 \
-        --values "sphere,0,25,[50;86.6;0]" --values "box,2024,25,[50;-86.6;0]" \
+      --patient-position HFS --values 0 \
+        --values "sphere,-100,25,[50;86.6;0]" --values "box,100,25,[50;-86.6;0]" \
         --voxelsize 4,3,4 --voxels 48,64,48 --modality CT \
       --structure external \
         --structure "sphere,Ball,25,CAVITY,[50;86.6;0]" \
