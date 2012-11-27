@@ -2,7 +2,6 @@ import numpy as np
 import modules
 from collections import defaultdict
 import dicom, os
-from pytools import memoize
 
 class TableTop(object):
     def __init__(self, psi_t=0, phi_t=0, Tx=0, Ty=0, Tz=0):
