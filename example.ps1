@@ -1,5 +1,5 @@
 C:\Python27\python.exe build_dicom.py `
-      --patient-position HFS --values 0 `
+      --patient-position HFS --values 0 --patients-name "Kalle Kula" `
         --values "sphere,-100,25,[50;86.6;0]" --values "box,100,25,[50;-86.6;0]" `
         --voxelsize "4,3,4" --voxels "48,64,48" --modality CT `
       --structure external `
