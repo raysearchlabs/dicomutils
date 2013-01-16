@@ -38,15 +38,15 @@ class ImageBuilder(object):
         if hasattr(self, '_last_mgrid_params') and (coldir, rowdir, slicedir, self.num_voxels, self.center, self.voxel_size) == self._last_mgrid_params:
             return self._last_mgrid
         self._last_mgrid_params = (coldir, rowdir, slicedir, self.num_voxels, self.center, self.voxel_size)
-        col,row,slice=np.mgrid[:self.num_voxels[0],:self.num_voxels[1],:self.num_voxels[2]]
-        corner = self.center - self.gridsize / 2.0
-        x = (corner[0] + (row + 0.5) * rowdir[0] * self.voxel_size[1] +
+        nv = np.array(self.num_voxels)/2.0
+        col,row,slice=np.mgrid[-nv[0]:nv[0], -nv[1]:nv[1], -nv[2]:nv[2]]
+        x = (self.center[0] + (row + 0.5) * rowdir[0] * self.voxel_size[1] +
              (col + 0.5) * coldir[0] * self.voxel_size[0] +
              (slice + 0.5) * slicedir[0] * self.voxel_size[2])
-        y = (corner[1] + (row + 0.5) * rowdir[1] * self.voxel_size[1] +
+        y = (self.center[1] + (row + 0.5) * rowdir[1] * self.voxel_size[1] +
              (col + 0.5) * coldir[1] * self.voxel_size[0] +
              (slice + 0.5) * slicedir[1] * self.voxel_size[2])
-        z = (corner[2] + (row + 0.5) * rowdir[2] * self.voxel_size[1] +
+        z = (self.center[2] + (row + 0.5) * rowdir[2] * self.voxel_size[1] +
              (col + 0.5) * coldir[2] * self.voxel_size[0] +
              (slice + 0.5) * slicedir[2] * self.voxel_size[2])
         self._last_mgrid = (x,y,z)
@@ -105,12 +105,12 @@ class StudyBuilder(object):
         self.seriesbuilders['CT'].append(b)
         return b
 
-    def build_static_plan(self, nominal_beam_energy=6, isocenter=None, num_leaves=None, leaf_widths=None, structure_set=None):
+    def build_static_plan(self, nominal_beam_energy=6, isocenter=None, num_leaves=None, leaf_widths=None, structure_set=None, sad=None):
         if structure_set == None and len(self.seriesbuilders['RTSTRUCT']) == 1:
             structure_set = self.seriesbuilders['RTSTRUCT'][0]
         b = StaticPlanBuilder(current_study=self.current_study,
                               nominal_beam_energy=nominal_beam_energy, isocenter=isocenter,
-                              num_leaves=num_leaves, leaf_widths=leaf_widths, structure_set=structure_set)
+                              num_leaves=num_leaves, leaf_widths=leaf_widths, structure_set=structure_set, sad=sad)
         self.seriesbuilders['RTPLAN'].append(b)
         return b
 
@@ -199,14 +199,15 @@ class CTBuilder(ImageBuilder):
         return self.datasets
 
 class StaticBeamBuilder(object):
-    def __init__(self, current_study, gantry_angle, meterset, nominal_beam_energy, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None):
+    def __init__(self, current_study, gantry_angle, meterset, nominal_beam_energy, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None, sad=None):
         if table_top == None:
             table_top = TableTop()
         if table_top_eccentric == None:
             table_top_eccentric = TableTopEcc()
         self.gantry_angle = gantry_angle
-        self.collimator_angle = collimator_angle=0
-        self.patient_support_angle = patient_support_angle=0
+        self.sad = sad
+        self.collimator_angle = collimator_angle
+        self.patient_support_angle = patient_support_angle
         self.table_top = table_top
         self.table_top_eccentric = table_top_eccentric
         self.meterset = meterset
@@ -232,7 +233,7 @@ class StaticBeamBuilder(object):
         if self.built:
             return self.rtbeam
         self.built = True
-        self.rtbeam = modules.add_static_rt_beam(ds = rtplan, nleaves = planbuilder.num_leaves, leafwidths = planbuilder.leaf_widths, gantry_angle = self.gantry_angle, collimator_angle = self.collimator_angle, patient_support_angle = self.patient_support_angle, table_top = self.table_top, table_top_eccentric = self.table_top_eccentric, isocenter = planbuilder.isocenter, nominal_beam_energy = self.nominal_beam_energy, current_study = self.current_study)
+        self.rtbeam = modules.add_static_rt_beam(ds = rtplan, nleaves = planbuilder.num_leaves, leafwidths = planbuilder.leaf_widths, gantry_angle = self.gantry_angle, collimator_angle = self.collimator_angle, patient_support_angle = self.patient_support_angle, table_top = self.table_top, table_top_eccentric = self.table_top_eccentric, isocenter = planbuilder.isocenter, nominal_beam_energy = self.nominal_beam_energy, current_study = self.current_study, sad=self.sad)
         for call in self.conform_calls:
             call(self.rtbeam)
         if self.jaws == None:
@@ -240,7 +241,7 @@ class StaticBeamBuilder(object):
         return self.rtbeam
 
 class StaticPlanBuilder(object):
-    def __init__(self, current_study, nominal_beam_energy=6, isocenter=None, num_leaves=None, leaf_widths=None, structure_set=None):
+    def __init__(self, current_study, nominal_beam_energy=6, isocenter=None, num_leaves=None, leaf_widths=None, structure_set=None, sad=None):
         self.isocenter = isocenter or [0,0,0]
         self.num_leaves = num_leaves or [10,40,10]
         self.leaf_widths = leaf_widths or [10, 5, 10]
@@ -248,10 +249,13 @@ class StaticPlanBuilder(object):
         self.current_study = current_study
         self.structure_set = structure_set
         self.nominal_beam_energy = nominal_beam_energy
+        self.sad = sad
         self.built = False
 
-    def build_beam(self, gantry_angle, meterset, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None):
-        sbb = StaticBeamBuilder(current_study = self.current_study, meterset = meterset, nominal_beam_energy = self.nominal_beam_energy, gantry_angle = gantry_angle, collimator_angle = collimator_angle, patient_support_angle = patient_support_angle, table_top = table_top, table_top_eccentric = table_top_eccentric)
+    def build_beam(self, gantry_angle, meterset, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None, sad=None):
+        if sad == None:
+            sad = self.sad
+        sbb = StaticBeamBuilder(current_study = self.current_study, meterset = meterset, nominal_beam_energy = self.nominal_beam_energy, gantry_angle = gantry_angle, collimator_angle = collimator_angle, patient_support_angle = patient_support_angle, table_top = table_top, table_top_eccentric = table_top_eccentric, sad = sad)
         self.beam_builders.append(sbb)
         return sbb
 
@@ -383,7 +387,7 @@ class DoseBuilder(ImageBuilder):
         beam_limiting_device_angle = Decimal(0)
         table_top = TableTop()
         table_top_ecc = TableTopEcc()
-        patient_position = 'HFS'
+        patient_position = self.current_study['PatientPosition']
         patient_support_angle = 0
         if hasattr(beam, 'SourceAxisDistance'):
             sad = beam.SourceAxisDistance
@@ -393,7 +397,7 @@ class DoseBuilder(ImageBuilder):
             if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
                 bldp = modules.getblds(cp.BeamLimitingDevicePositionSequence)
             gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
-            gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_angle)
+            gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_pitch_angle)
             beam_limiting_device_angle = getattr(cp, 'BeamLimitingDeviceAngle', beam_limiting_device_angle)
             patient_support_angle = getattr(cp, 'PatientSupportAngle', patient_support_angle)
             isocenter = getattr(cp, 'IsocenterPosition', isocenter)
@@ -433,6 +437,10 @@ class DoseBuilder(ImageBuilder):
             return self.datasets
         rd = modules.build_rt_dose(self.pixel_array, self.voxel_size, self.center, self.current_study,
                                    self.planbuilder.build()[0], self.dose_grid_scaling)
+        x,y,z = self.mgrid()
+        rd.ImagePositionPatient = [x[0,0,0],y[0,0,0],z[0,0,0]]
+        rd.ImageOrientationPatient = self.ImageOrientationPatient
+                                   
         self.built = True
         self.datasets = [rd]
         return self.datasets

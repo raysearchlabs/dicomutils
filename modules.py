@@ -420,7 +420,7 @@ def get_dicom_to_bld_coordinate_transform(gantryAngle, gantryPitchAngle, beamLim
     isocenter_p1 = np.linalg.inv(coordinates.Mpd()) * np.array([float(isocenter_d[0]), float(isocenter_d[1]), float(isocenter_d[2]), 1.0]).reshape((4,1))
     # Compute the patient coordinate system translation
     Px,Py,Pz,_ = isocenter_p0 - isocenter_p1
-
+    
     M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
          * coordinates.Mfg(gantryPitchAngle, gantryAngle)
          * np.linalg.inv(coordinates.Mfs(patientSupportAngle))
@@ -501,8 +501,6 @@ def conform_mlc_to_rectangle(beam, x, y, center):
 
 def conform_jaws_to_rectangle(beam, x, y, center):
     """Sets jaws opening to x * y cm, centered at `center`"""
-    bld = getblds(beam.BeamLimitingDeviceSequence)
-    nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
     for cp in beam.ControlPointSequence:
         if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
             bldp = getblds(cp.BeamLimitingDevicePositionSequence)
@@ -658,7 +656,7 @@ def get_structure_set_module(ds, DT, TM, ref_images, current_study):
 
     return ds
 
-def add_static_rt_beam(ds, nleaves, leafwidths, gantry_angle, collimator_angle, patient_support_angle, table_top, table_top_eccentric, isocenter, nominal_beam_energy, current_study):
+def add_static_rt_beam(ds, nleaves, leafwidths, gantry_angle, collimator_angle, patient_support_angle, table_top, table_top_eccentric, isocenter, nominal_beam_energy, current_study, sad=None):
     beam_number = zmax(b.BeamNumber for b in ds.BeamSequence) + 1
     beam = dicom.dataset.Dataset()
     ds.BeamSequence.append(beam)
@@ -678,7 +676,10 @@ def add_static_rt_beam(ds, nleaves, leafwidths, gantry_angle, collimator_angle, 
     # beam.DeviceSerialNumber # T3
     beam.PrimaryDosimeterUnit = "MU" # T3
     # beam.ReferencedToleranceTableNumber # T3
-    beam.SourceAxisDistance = 1000 # mm, T3
+    if sad == None:
+        beam.SourceAxisDistance = 1000 # mm, T3
+    else:
+        beam.SourceAxisDistance = sad # mm, T3
     beam.BeamLimitingDeviceSequence = [dicom.dataset.Dataset() for k in range(3)]
     beam.BeamLimitingDeviceSequence[0].RTBeamLimitingDeviceType = "ASYMX"
     #beam.BeamLimitingDeviceSequence[0].SourceToBeamLimitingDeviceDistance = 60 # T3
@@ -877,9 +878,9 @@ def build_rt_dose(dose_data, voxel_size, center, current_study, rtplan, dose_gri
     rd.SliceThickness = voxel_size[2]
     rd.GridFrameOffsetVector = [z*voxel_size[2] for z in range(nVoxels[2])]
     rd.DoseGridScaling = dose_grid_scaling
-    rd.ImagePositionPatient = [-(nVoxels[0]-1)*voxel_size[0]/2.0,
-                               -(nVoxels[1]-1)*voxel_size[1]/2.0,
-                               -(nVoxels[2]-1)*voxel_size[2]/2.0]
+    rd.ImagePositionPatient = [center[0]-(nVoxels[0]-1)*voxel_size[0]/2.0,
+                               center[1]-(nVoxels[1]-1)*voxel_size[1]/2.0,
+                               center[2]-(nVoxels[2]-1)*voxel_size[2]/2.0 + z*voxel_size[2]]
 
     rd.PixelData=dose_data.tostring(order='F')
     for k, v in kwargs.iteritems():
@@ -889,8 +890,6 @@ def build_rt_dose(dose_data, voxel_size, center, current_study, rtplan, dose_gri
 
 
 def build_rt_structure_set(ref_images, current_study, **kwargs):
-    rtstructuid = generate_uid()
-    FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
     rs = get_default_rt_structure_set_dataset(ref_images, current_study)
