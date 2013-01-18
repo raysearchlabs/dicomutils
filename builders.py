@@ -353,6 +353,37 @@ class StructureSetBuilder(object):
 
 from decimal import Decimal
 
+def do_for_all_cps(beam, patient_position, func):
+    gantry_angle = None
+    gantry_pitch_angle = 0
+    isocenter = [0,0,0]
+    beam_limiting_device_angle = Decimal(0)
+    table_top = TableTop()
+    table_top_ecc = TableTopEcc()
+    patient_support_angle = 0
+    if hasattr(beam, 'SourceAxisDistance'):
+        sad = beam.SourceAxisDistance
+    else:
+        sad = 1000
+        
+    for cp in beam.ControlPointSequence:
+        gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
+        gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_pitch_angle)
+        beam_limiting_device_angle = getattr(cp, 'BeamLimitingDeviceAngle', beam_limiting_device_angle)
+        patient_support_angle = getattr(cp, 'PatientSupportAngle', patient_support_angle)
+        isocenter = getattr(cp, 'IsocenterPosition', isocenter)
+        table_top_ecc.Ls = getattr(cp, 'TableTopEccentricAxisDistance', table_top_ecc.Ls)
+        table_top_ecc.theta_e = getattr(cp, 'TableTopEccentricAngle', table_top_ecc.theta_e)
+        table_top.psi_t = getattr(cp, 'TableTopPitchAngle', table_top.psi_t)
+        table_top.phi_t = getattr(cp, 'TableTopRollAngle', table_top.phi_t)
+        table_top.Tx = getattr(cp, 'TableTopLateralPosition', table_top.Tx)
+        table_top.Ty = getattr(cp, 'TableTopLongitudinalPosition', table_top.Ty)
+        table_top.Tz = getattr(cp, 'TableTopVerticalPosition', table_top.Tz)
+        patient_position = getattr(cp, 'PatientPosition', patient_position)
+        func(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
+             patient_support_angle, patient_position,
+             table_top, table_top_ecc, sad, isocenter)
+
 class DoseBuilder(ImageBuilder):
     def __init__(self, current_study, planbuilder, num_voxels, voxel_size, center=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
         self.current_study = current_study
@@ -380,58 +411,35 @@ class DoseBuilder(ImageBuilder):
 
     def add_lightfield(self, beam, weight):
         x,y,z = self.mgrid()
+        coords = (np.array([x.ravel(), y.ravel(), z.ravel(), np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape))))
         bld = modules.getblds(beam.BeamLimitingDeviceSequence)
-        gantry_angle = None
-        gantry_pitch_angle = 0
-        isocenter = [0,0,0]
-        beam_limiting_device_angle = Decimal(0)
-        table_top = TableTop()
-        table_top_ecc = TableTopEcc()
-        patient_position = self.current_study['PatientPosition']
-        patient_support_angle = 0
-        if hasattr(beam, 'SourceAxisDistance'):
-            sad = beam.SourceAxisDistance
-        else:
-            sad = 1000
-        for cp in beam.ControlPointSequence:
+        bldp = None
+        global bldp
+        
+        def add_lightfield_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
+                                  patient_support_angle, patient_position,
+                                  table_top, table_top_ecc, sad, isocenter):
+            global bldp
             if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
                 bldp = modules.getblds(cp.BeamLimitingDevicePositionSequence)
-            gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
-            gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_pitch_angle)
-            beam_limiting_device_angle = getattr(cp, 'BeamLimitingDeviceAngle', beam_limiting_device_angle)
-            patient_support_angle = getattr(cp, 'PatientSupportAngle', patient_support_angle)
-            isocenter = getattr(cp, 'IsocenterPosition', isocenter)
-            table_top_ecc.Ls = getattr(cp, 'TableTopEccentricAxisDistance', table_top_ecc.Ls)
-            table_top_ecc.theta_e = getattr(cp, 'TableTopEccentricAngle', table_top_ecc.theta_e)
-            table_top.psi_t = getattr(cp, 'TableTopPitchAngle', table_top.psi_t)
-            table_top.phi_t = getattr(cp, 'TableTopRollAngle', table_top.phi_t)
-            table_top.Tx = getattr(cp, 'TableTopLateralPosition', table_top.Tx)
-            table_top.Ty = getattr(cp, 'TableTopLongitudinalPosition', table_top.Ty)
-            table_top.Tz = getattr(cp, 'TableTopVerticalPosition', table_top.Tz)
-            patient_position = getattr(cp, 'PatientPosition', patient_position)
-
-            table_top = TableTop()
             Mdb = modules.get_dicom_to_bld_coordinate_transform(gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                                                 patient_support_angle, patient_position,
                                                                 table_top, table_top_ecc, sad, isocenter)
-            coords = np.array([x.ravel(),
-                               y.ravel(),
-                               z.ravel(),
-                               np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape)))
             c = Mdb * coords
             # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
             c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
             nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
             for i in range(nleaves):
                 self.pixel_array.ravel()[(c2[0,:] >= max(float(bldp['ASYMX'].LeafJawPositions[0]),
-                                              float(bldp['MLCX'].LeafJawPositions[i])))
-                               * (c2[0,:] <= min(float(bldp['ASYMX'].LeafJawPositions[1]),
-                                                 float(bldp['MLCX'].LeafJawPositions[i + nleaves])))
-                               * (c2[1,:] > max(float(bldp['ASYMY'].LeafJawPositions[0]),
-                                                 float(bld['MLCX'].LeafPositionBoundaries[i])))
-                               * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
-                                                 float(bld['MLCX'].LeafPositionBoundaries[i+1])))] += 1
-
+                                          float(bldp['MLCX'].LeafJawPositions[i])))
+                                       * (c2[0,:] <= min(float(bldp['ASYMX'].LeafJawPositions[1]),
+                                          float(bldp['MLCX'].LeafJawPositions[i + nleaves])))
+                                       * (c2[1,:] > max(float(bldp['ASYMY'].LeafJawPositions[0]),
+                                          float(bld['MLCX'].LeafPositionBoundaries[i])))
+                                       * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
+                                          float(bld['MLCX'].LeafPositionBoundaries[i+1])))] += 1
+        do_for_all_cps(beam, self.current_study['PatientPosition'], add_lightfield_for_cp)
+       
     def build(self):
         if self.built:
             return self.datasets
