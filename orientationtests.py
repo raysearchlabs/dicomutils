@@ -23,11 +23,19 @@ def build_orientation(patient_position, row_direction, column_direction, frame_o
     ct = sb.build_ct(num_voxels = [7,7,7], voxel_size = [4,4,4], rescale_slope = 1, rescale_intercept = -1024, row_direction = row_direction, column_direction = column_direction)
     ct.clear(real_value = -1000)
     ct.add_box(size = [4,4,4], center = [0,0,0], real_value = 0)
+    ct.add_box(size = [20,4,4], center = [0,-8,-8], real_value = 0)
+    ct.add_box(size = [4,20,4], center = [8,0,-8], real_value = 0)
+    ct.add_box(size = [4,4,20], center = [8,8,0], real_value = 0)
+    ct.add_sphere(radius = 4, center = [-8,-8,-8], real_value = 0)
 
     print "rtstruct"
     rtstruct = sb.build_structure_set(ct)
     rtstruct.add_external_box()
-    rtstruct.add_box(size = [4,4,4], center = [0,0,0], name='Box-Organ', interpreted_type='SITE')
+    rtstruct.add_box(size = [4,4,4], center = [0,0,0], name='CenterVoxel', interpreted_type='SITE')
+    rtstruct.add_box(size = [20,4,4], center = [0,-8,-8], name='x=-8 to 8, y=z=-8', interpreted_type='SITE')
+    rtstruct.add_box(size = [4,20,4], center = [8,0,-8], name='y=-8 to 8 x=8, z=-8', interpreted_type='SITE')
+    rtstruct.add_box(size = [4,4,20], center = [8,8,0], name='z=-8 to 8, x=y=8', interpreted_type='SITE')
+    rtstruct.add_sphere(radius=4, center = [-8,-8,-8], name='x=y=z=-8', interpreted_type='SITE')
     rtstruct.build()
 
     print "rtplan"
@@ -35,7 +43,7 @@ def build_orientation(patient_position, row_direction, column_direction, frame_o
     b1 = rtplan.build_beam(gantry_angle = 0, collimator_angle=30, meterset = 100)
     b1.conform_to_rectangle(4, 4, [0,0])
     b2 = rtplan.build_beam(gantry_angle = 120, meterset = 100)
-    b2.conform_to_rectangle(4, 4, [0,0])
+    b2.conform_to_rectangle(4, 4, [4,4])
     rtplan.build()
 
     print "rtdose"
