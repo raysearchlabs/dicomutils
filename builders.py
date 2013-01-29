@@ -2,19 +2,8 @@ import numpy as np
 import modules
 from collections import defaultdict
 import dicom, os
-
-class TableTop(object):
-    def __init__(self, psi_t=0, phi_t=0, Tx=0, Ty=0, Tz=0):
-        self.psi_t = psi_t
-        self.phi_t = phi_t
-        self.Tx = Tx
-        self.Ty = Ty
-        self.Tz = Tz
-
-class TableTopEcc(object):
-    def __init__(self, Ls=0, theta_e=0):
-        self.Ls = Ls
-        self.theta_e = theta_e
+dicom.config.use_DS_decimal = False
+dicom.config.allow_DS_float = True
 
 class ImageBuilder(object):
     @property
@@ -198,8 +187,11 @@ class CTBuilder(ImageBuilder):
         self.datasets = cts
         return self.datasets
 
+from coordinates import TableTop, TableTopEcc
+
 class StaticBeamBuilder(object):
-    def __init__(self, current_study, gantry_angle, meterset, nominal_beam_energy, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None, sad=None):
+    def __init__(self, current_study, gantry_angle, meterset, nominal_beam_energy,
+                 collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None, sad=None):
         if table_top == None:
             table_top = TableTop()
         if table_top_eccentric == None:
@@ -228,8 +220,11 @@ class StaticBeamBuilder(object):
 
     def conform_jaws_to_mlc(self):
         self.conform_calls.append(lambda beam: modules.conform_jaws_to_mlc(beam))
+    
+    def finalize_mlc(self):
+        modules.finalize_mlc(self.rtbeam)
 
-    def build(self, rtplan, planbuilder):
+    def build(self, rtplan, planbuilder, finalize_mlc=True):
         if self.built:
             return self.rtbeam
         self.built = True
@@ -238,6 +233,8 @@ class StaticBeamBuilder(object):
             call(self.rtbeam)
         if self.jaws == None:
             modules.conform_jaws_to_mlc(self.rtbeam)
+        if finalize_mlc:
+            self.finalize_mlc()
         return self.rtbeam
 
 class StaticPlanBuilder(object):
@@ -259,14 +256,14 @@ class StaticPlanBuilder(object):
         self.beam_builders.append(sbb)
         return sbb
 
-    def build(self):
+    def build(self, finalize_mlc = True):
         if self.built:
             return self.datasets
         rtplan = modules.build_rt_plan(self.current_study, self.isocenter, self.structure_set.build()[0])
         assert len(rtplan.FractionGroupSequence) == 1
         fraction_group = rtplan.FractionGroupSequence[0]
         for bb in self.beam_builders:
-            rtbeam = bb.build(rtplan, self)
+            rtbeam = bb.build(rtplan, self, finalize_mlc=finalize_mlc)
             modules.add_beam_to_rt_fraction_group(fraction_group, rtbeam, bb.meterset)
         self.built = True
         self.datasets = [rtplan]
@@ -288,10 +285,12 @@ class ROIBuilder(object):
         if self.built:
             return self.roi
         roi = modules.add_roi_to_structure_set(structure_set, self.name, self.structure_set_builder.current_study)
-        modules.add_roi_to_roi_contour(structure_set, roi, self.contours, self.structure_set_builder.images.build())
-        modules.add_roi_to_rt_roi_observation(structure_set, roi, self.name, self.interpreted_type)
+        roi_contour = modules.add_roi_to_roi_contour(structure_set, roi, self.contours, self.structure_set_builder.images.build())
+        roi_observation = modules.add_roi_to_rt_roi_observation(structure_set, roi, self.name, self.interpreted_type)
         self.built = True
         self.roi = roi
+        self.roi_contour = roi_contour
+        self.roi_observation = roi_observation
         return self.roi
 
 class StructureSetBuilder(object):
@@ -351,38 +350,7 @@ class StructureSetBuilder(object):
         self.datasets = [rs]
         return self.datasets
 
-from decimal import Decimal
-
-def do_for_all_cps(beam, patient_position, func):
-    gantry_angle = None
-    gantry_pitch_angle = 0
-    isocenter = [0,0,0]
-    beam_limiting_device_angle = Decimal(0)
-    table_top = TableTop()
-    table_top_ecc = TableTopEcc()
-    patient_support_angle = 0
-    if hasattr(beam, 'SourceAxisDistance'):
-        sad = beam.SourceAxisDistance
-    else:
-        sad = 1000
-        
-    for cp in beam.ControlPointSequence:
-        gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
-        gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_pitch_angle)
-        beam_limiting_device_angle = getattr(cp, 'BeamLimitingDeviceAngle', beam_limiting_device_angle)
-        patient_support_angle = getattr(cp, 'PatientSupportAngle', patient_support_angle)
-        isocenter = getattr(cp, 'IsocenterPosition', isocenter)
-        table_top_ecc.Ls = getattr(cp, 'TableTopEccentricAxisDistance', table_top_ecc.Ls)
-        table_top_ecc.theta_e = getattr(cp, 'TableTopEccentricAngle', table_top_ecc.theta_e)
-        table_top.psi_t = getattr(cp, 'TableTopPitchAngle', table_top.psi_t)
-        table_top.phi_t = getattr(cp, 'TableTopRollAngle', table_top.phi_t)
-        table_top.Tx = getattr(cp, 'TableTopLateralPosition', table_top.Tx)
-        table_top.Ty = getattr(cp, 'TableTopLongitudinalPosition', table_top.Ty)
-        table_top.Tz = getattr(cp, 'TableTopVerticalPosition', table_top.Tz)
-        patient_position = getattr(cp, 'PatientPosition', patient_position)
-        func(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
-             patient_support_angle, patient_position,
-             table_top, table_top_ecc, sad, isocenter)
+from modules import do_for_all_cps
 
 class DoseBuilder(ImageBuilder):
     def __init__(self, current_study, planbuilder, num_voxels, voxel_size, center=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
@@ -413,15 +381,10 @@ class DoseBuilder(ImageBuilder):
         x,y,z = self.mgrid()
         coords = (np.array([x.ravel(), y.ravel(), z.ravel(), np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape))))
         bld = modules.getblds(beam.BeamLimitingDeviceSequence)
-        bldp = None
-        global bldp
         
         def add_lightfield_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                   patient_support_angle, patient_position,
-                                  table_top, table_top_ecc, sad, isocenter):
-            global bldp
-            if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
-                bldp = modules.getblds(cp.BeamLimitingDevicePositionSequence)
+                                  table_top, table_top_ecc, sad, isocenter, bldp):
             Mdb = modules.get_dicom_to_bld_coordinate_transform(gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                                                 patient_support_angle, patient_position,
                                                                 table_top, table_top_ecc, sad, isocenter)

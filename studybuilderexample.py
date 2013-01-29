@@ -6,8 +6,9 @@ reload(modules)
 from builders import StudyBuilder
 
 import os
-if not os.path.exists("/tmp/studybuilder"):
-    os.mkdir("/tmp/studybuilder")
+tmpdir = os.path.join(os.getenv("TEMP"), "studybuilder")
+if not os.path.exists(tmpdir):
+    os.mkdir(tmpdir)
 
 sb = StudyBuilder(patient_position="HFS", patient_id="123", patients_name="Kalle^Kula", patients_birthdate = "20121212")
 ct = sb.build_ct(num_voxels = [48,64,48], voxel_size = [4,3,4], rescale_slope = 1, rescale_intercept = -1024)
@@ -41,4 +42,5 @@ for beam in rtplan.beam_builders:
     rtdose.add_lightfield(beam.rtbeam, beam.meterset)
 
 
-sb.write("/tmp/studybuilder")
+sb.write(tmpdir)
+print tmpdir

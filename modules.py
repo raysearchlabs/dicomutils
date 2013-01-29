@@ -1,4 +1,6 @@
-import dicom, time, uuid, sys, datetime, os
+import dicom, uuid, datetime
+dicom.config.use_DS_decimal = False
+dicom.config.allow_DS_float = True
 import numpy as np
 import coordinates
 # Be careful to pass good fp numbers...
@@ -389,8 +391,6 @@ def get_rt_beams_module(ds, isocenter, current_study):
     so that there are na leaves with width wa followed by nb leaves with width wb etc."""
     ds.BeamSequence = []
 
-from decimal import Decimal
-
 def get_dicom_to_bld_coordinate_transform(gantryAngle, gantryPitchAngle, beamLimitingDeviceAngle, patientSupportAngle, patientPosition, table_top, table_top_ecc, SAD, isocenter_d):
     if patientPosition == 'HFS':
         psi_p, phi_p, theta_p = 0,0,0
@@ -438,6 +438,44 @@ def getblds(blds):
             d[bld.RTBeamLimitingDeviceType] = bld
     return d
 
+from coordinates import TableTop, TableTopEcc
+
+def do_for_all_cps(beam, patient_position, func, *args, **kwargs):
+    gantry_angle = None
+    gantry_pitch_angle = 0
+    isocenter = [0,0,0]
+    beam_limiting_device_angle = 0
+    table_top = TableTop()
+    table_top_ecc = TableTopEcc()
+    beam_limiting_device_positions = None
+
+    patient_support_angle = 0
+    if hasattr(beam, 'SourceAxisDistance'):
+        sad = beam.SourceAxisDistance
+    else:
+        sad = 1000
+        
+    for cp in beam.ControlPointSequence:
+        gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
+        gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_pitch_angle)
+        beam_limiting_device_angle = getattr(cp, 'BeamLimitingDeviceAngle', beam_limiting_device_angle)
+        patient_support_angle = getattr(cp, 'PatientSupportAngle', patient_support_angle)
+        isocenter = getattr(cp, 'IsocenterPosition', isocenter)
+        table_top_ecc.Ls = getattr(cp, 'TableTopEccentricAxisDistance', table_top_ecc.Ls)
+        table_top_ecc.theta_e = getattr(cp, 'TableTopEccentricAngle', table_top_ecc.theta_e)
+        table_top.psi_t = getattr(cp, 'TableTopPitchAngle', table_top.psi_t)
+        table_top.phi_t = getattr(cp, 'TableTopRollAngle', table_top.phi_t)
+        table_top.Tx = getattr(cp, 'TableTopLateralPosition', table_top.Tx)
+        table_top.Ty = getattr(cp, 'TableTopLongitudinalPosition', table_top.Ty)
+        table_top.Tz = getattr(cp, 'TableTopVerticalPosition', table_top.Tz)
+        patient_position = getattr(cp, 'PatientPosition', patient_position)
+        if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
+                beam_limiting_device_positions = getblds(cp.BeamLimitingDevicePositionSequence)
+        func(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
+             patient_support_angle, patient_position,
+             table_top, table_top_ecc, sad, isocenter, beam_limiting_device_positions,
+             *args, **kwargs)
+
 def nmin(it):
     n = None
     for i in it:
@@ -456,7 +494,7 @@ def conform_jaws_to_mlc(beam):
     bld = getblds(beam.BeamLimitingDeviceSequence)
     nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
     for cp in beam.ControlPointSequence:
-        opentolerance = Decimal("0.5") # mm
+        opentolerance = 0.5 # mm
         if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
             bldp = getblds(cp.BeamLimitingDevicePositionSequence)
 
@@ -484,8 +522,8 @@ def conform_mlc_to_circle(beam, radius, center):
             for i in range(nleaves):
                 y = float((bld['MLCX'].LeafPositionBoundaries[i] + bld['MLCX'].LeafPositionBoundaries[i+1]) / 2)
                 if abs(y) < radius:
-                    bldp['MLCX'].LeafJawPositions[i] = Decimal(-np.sqrt(radius**2 - (y-center[1])**2) + center[0]).quantize(Decimal("0.01"))
-                    bldp['MLCX'].LeafJawPositions[i + nleaves] = Decimal(np.sqrt(radius**2 - (y-center[1])**2) + center[0]).quantize(Decimal("0.01"))
+                    bldp['MLCX'].LeafJawPositions[i] = -np.sqrt(radius**2 - (y-center[1])**2) + center[0]
+                    bldp['MLCX'].LeafJawPositions[i + nleaves] = np.sqrt(radius**2 - (y-center[1])**2) + center[0]
 
 def conform_mlc_to_rectangle(beam, x, y, center):
     """Sets MLC to open at least x * y cm"""
@@ -496,23 +534,80 @@ def conform_mlc_to_rectangle(beam, x, y, center):
             bldp = getblds(cp.BeamLimitingDevicePositionSequence)
             for i in range(nleaves):
                 if bld['MLCX'].LeafPositionBoundaries[i+1] > (center[1]-y/2.0) and bld['MLCX'].LeafPositionBoundaries[i] < (center[1]+y/2.0):
-                    bldp['MLCX'].LeafJawPositions[i] = Decimal(center[0] - x/2.0)
-                    bldp['MLCX'].LeafJawPositions[i + nleaves] = Decimal(center[0] + x/2.0)
+                    bldp['MLCX'].LeafJawPositions[i] = center[0] - x/2.0
+                    bldp['MLCX'].LeafJawPositions[i + nleaves] = center[0] + x/2.0
 
 def conform_jaws_to_rectangle(beam, x, y, center):
     """Sets jaws opening to x * y cm, centered at `center`"""
     for cp in beam.ControlPointSequence:
         if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
             bldp = getblds(cp.BeamLimitingDevicePositionSequence)
-            bldp['ASYMX'].LeafJawPositions = [Decimal(center[0] - x/2.0),
-                                              Decimal(center[0] + x/2.0)]
-            bldp['ASYMY'].LeafJawPositions = [Decimal(center[1] - y/2.0),
-                                              Decimal(center[1] + y/2.0)]
+            bldp['ASYMX'].LeafJawPositions = [center[0] - x/2.0, center[0] + x/2.0]
+            bldp['ASYMY'].LeafJawPositions = [center[1] - y/2.0, center[1] + y/2.0]
 
-#def conform_mlc_to_roi(beam, roi, current_study):
-#    for contour in roi.ContourSequence:
-#        for i in range(0, len(contour.ContourData) - 3, 3):
-#            pass
+def finalize_mlc(beam):
+    # Just close the leaves at 0. TODO: be more clever
+    for cp in beam.CPs:
+        if not hasattr(cp, 'BLDPositions'):
+            continue
+        mlcs = [bld for bld in cp.BLDPositions if bld.RTBLDType == "MLCX"]
+        if len(mlcs) != 1:
+            continue
+        mlc = mlcs[0]
+        nleaves = len(mlc.LeafJawPositions)/2
+        for i in range(nleaves):
+            if mlc.LeafJawPositions[i] >= mlc.LeafJawPositions[i+nleaves]:
+               mlc.LeafJawPositions[i] = 0
+               mlc.LeafJawPositions[i+nleaves] = 0
+
+def conform_mlc_to_roi(beam, roi, current_study):
+    bld = getblds(beam.BeamLimitingDeviceSequence)
+    def conform_mlc_to_roi_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
+                                  patient_support_angle, patient_position,
+                                  table_top, table_top_ecc, sad, isocenter, beam_limiting_device_positions, roi):
+        Mdb = get_dicom_to_bld_coordinate_transform(gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
+                                                    patient_support_angle, patient_position,
+                                                    table_top, table_top_ecc, sad, isocenter)
+        for contour in roi.ContourSequence:
+            nvertices = len(contour.ContourData)/3
+            vertices = np.array(contour.ContourData).reshape((3,1,1,nvertices), order='F')
+            vertices = np.vstack((vertices, np.ones((1,1,1,nvertices))))
+            
+            lp = beam_limiting_device_positions['MLCX'].LeafJawPositions
+
+            c = Mdb * vertices
+            # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
+            c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
+            vs = zip(list(c2[0]), list(c2[1]))
+            for v1,v2 in zip(vs[:-1], vs[1:]):
+                open_mlc_for_line_segment(bld['MLCX'].LeafPositionBoundaries, lp, v1, v2)
+            open_mlc_for_line_segment(bld['MLCX'].LeafPositionBoundaries, lp, vs[-1], vs[0])
+    
+    
+    do_for_all_cps(beam, current_study['PatientPosition'], conform_mlc_to_roi_for_cp, roi)
+
+def get_contours_in_bld(beam, roi, current_study):
+    def conform_mlc_to_roi_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
+                                  patient_support_angle, patient_position,
+                                  table_top, table_top_ecc, sad, isocenter, beam_limiting_device_positions, roi, contours):
+        Mdb = get_dicom_to_bld_coordinate_transform(gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
+                                                    patient_support_angle, patient_position,
+                                                    table_top, table_top_ecc, sad, isocenter)
+        for contour in roi.ContourSequence:
+            nvertices = len(contour.ContourData)/3
+            vertices = np.array(contour.ContourData).reshape((3,1,1,nvertices), order='F')
+            vertices = np.vstack((vertices, np.ones((1,1,1,nvertices))))
+            
+            c = Mdb * vertices
+            # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
+            c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
+            contours[cp.ControlPointIndex].append(c2)
+    
+    
+    contours = defaultdict(lambda: [])
+    do_for_all_cps(beam, current_study['PatientPosition'], conform_mlc_to_roi_for_cp, roi, contours)
+    return contours
+
 
 def open_mlc_for_line_segment(lpb, lp, v1, v2):
     if v1[1] > v2[1]:
@@ -531,7 +626,7 @@ def open_mlc_for_line_segment(lpb, lp, v1, v2):
         else:
             xstart = v1[0]
         if v2[1] > lpb[i+1]:
-            xend = v2[0] - (v1[0]-v2[0]) * (lpb[i+1]-v2[1])/(v1[1]-v2[1])
+            xend = v2[0] + (v1[0]-v2[0]) * (lpb[i+1]-v2[1])/(v1[1]-v2[1])
         else:
             xend = v2[0]
         lp[i] = min(lp[i], xstart, xend)
@@ -722,7 +817,7 @@ def add_static_rt_beam(ds, nleaves, leafwidths, gantry_angle, collimator_angle, 
             cp.BeamLimitingDevicePositionSequence[1].RTBeamLimitingDeviceType = 'ASYMY'
             cp.BeamLimitingDevicePositionSequence[1].LeafJawPositions = [0,0]
             cp.BeamLimitingDevicePositionSequence[2].RTBeamLimitingDeviceType = 'MLCX'
-            cp.BeamLimitingDevicePositionSequence[2].LeafJawPositions = [0,0]*sum(nleaves)
+            cp.BeamLimitingDevicePositionSequence[2].LeafJawPositions = [1000]*sum(nleaves) + [-1000] * sum(nleaves)
             cp.GantryAngle = gantry_angle
             cp.GantryRotationDirection = 'NONE'
             cp.NominalBeamEnergy = nominal_beam_energy

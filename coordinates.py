@@ -133,7 +133,18 @@ class Coordinates(object):
         parents_of_to = self.get_parents(to_system)
             
         
-                 
+class TableTop(object):
+    def __init__(self, psi_t=0, phi_t=0, Tx=0, Ty=0, Tz=0):
+        self.psi_t = psi_t
+        self.phi_t = phi_t
+        self.Tx = Tx
+        self.Ty = Ty
+        self.Tz = Tz
+
+class TableTopEcc(object):
+    def __init__(self, Ls=0, theta_e=0):
+        self.Ls = Ls
+        self.theta_e = theta_e
 
 def transform3d(v3, m):
     assert v3.shape[0] == 3
