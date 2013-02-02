@@ -147,8 +147,11 @@ class TableTopEcc(object):
         self.theta_e = theta_e
 
 def transform3d(v3, m):
+    v3 = np.atleast_2d(v3)
+    if v3.shape == (1,3):
+        v3=v3.T
     assert v3.shape[0] == 3
-    return (m * np.vstack((v3, np.ones((1,v3.shape[1])))))[:3,:]
+    return np.array((m * np.vstack((v3, np.ones((1,v3.shape[1])))))[:3,:])
 
 coordinate_systems = [
     ("Fixed", "f", None, None),
