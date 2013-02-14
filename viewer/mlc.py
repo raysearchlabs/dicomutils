@@ -2,19 +2,19 @@ from mayavi import mlab
 from traits.api import HasTraits, on_trait_change, Array, CFloat
 from traitsui.api import View
 import numpy as np
-import coordinates
-from coordinates import transform3d
+from .. import coordinates
+from ..coordinates import transform3d
 
 class MLC(HasTraits):
     """ A class that shows an MLC (Multi-Leaf Collimator)
     """
 
     source_distance = CFloat(500.0, 
-                             desc='distance from the source to the furthest point on the MLC along the beam axis',
+                             desc='distance from the source to the furthest point on the MLC along the beam axis (bottom of the mlc)',
                              enter_set=True, auto_set=False)
     leaf_positions = Array(float, value=np.zeros((2,1)), shape=(2,(1,None)), desc='the dynamic positions of the leaves',
                            enter_set=True, auto_set=False)
-    leaf_boundaries = Array(float, value=(1,), shape=((1,None),), desc='the boundaires of the leaves, in the direction orthogonal to the movement',
+    leaf_boundaries = Array(float, value=((0,1),), shape=(1,(2,None)), desc='the boundaires of the leaves, in the direction orthogonal to the movement',
                            enter_set=True, auto_set=False)
     beam_limiting_device_angle = CFloat(0.0, desc="Beam Limiting Device Angle", 
                            enter_set=True, auto_set=False)
@@ -29,15 +29,15 @@ class MLC(HasTraits):
 
     _trimesh = None
 
-    view = View('source_distance', 'leaf_positions', 'leaf_boundaries', 
+    view = View('source_distance', 'leaf_positions', 'leaf_boundaries',
                 'beam_limiting_device_angle', 'gantry_angle', 'gantry_pitch_angle', 
                 'sad', 'thickness', '_')
 
-    @on_trait_change('source_distance,leaf_positions,leaf_boundaries')
+    @on_trait_change('source_distance,leaf_positions,leaf_boundaries,beam_limiting_device_angle,gantry_angle,gantry_pitch_angle,sad,thickness')
     def redraw(self):
         if hasattr(self, 'app') and self.app.scene._renderer is not None:
             self.display()
-            self.app.visualize_field()
+            #self.app.visualize_field()
 
     def display(self):
         """
@@ -63,13 +63,14 @@ class MLC(HasTraits):
 
         pts = []
         polys = []
-        assert self.leaf_positions.shape[1]+1 == self.leaf_boundaries.shape[0]
+        assert self.leaf_positions.shape[1]+1 == self.leaf_boundaries.shape[1]
+        nleaves = self.leaf_boundaries.shape[1] - 1
         xmin = np.amin(self.leaf_positions) - 5
         xmax = np.amax(self.leaf_positions) + 5
         zspan = (-self.source_distance, -self.source_distance + self.thickness)
-        for i in range(len(self.leaf_boundaries) - 1):
-            leaf(pts, polys, (xmin, self.leaf_positions[0,i]), self.leaf_boundaries[i:i+2], zspan, self.sad)
-            leaf(pts, polys, (self.leaf_positions[1,i], xmax), self.leaf_boundaries[i:i+2], zspan, self.sad)
+        for i in range(nleaves):
+            leaf(pts, polys, (xmin, self.leaf_positions[0,i]), self.leaf_boundaries[0,i:i+2], zspan, self.sad)
+            leaf(pts, polys, (self.leaf_positions[1,i], xmax), self.leaf_boundaries[0,i:i+2], zspan, self.sad)
 
         polys = np.array(polys)
         pts = np.array(pts)
@@ -83,10 +84,7 @@ class MLC(HasTraits):
         if self._trimesh is None:
             self._trimesh = mlab.triangular_mesh(pts[:,0], pts[:,1], pts[:,2], polys, color=(.5,.5,1))        
         else:
-            if all(self._trimesh.mlab_source.triangles == polys):
-                self._trimesh.mlab_source.set(x=pts[:,0], y=pts[:,1], z=pts[:,2])
-            else:
-                self._trimesh.mlab_source.set(x=pts[:,0], y=pts[:,1], z=pts[:,2], triangles=polys)
+            self._trimesh.mlab_source.set(x=pts[:,0], y=pts[:,1], z=pts[:,2], triangles=polys)
 
     def move_camera_to_bev(self):
         # Okay, so there is a better solution to inclination and azimuth, but in
@@ -98,17 +96,20 @@ class MLC(HasTraits):
         inclination = np.arccos(p[2]/np.linalg.norm(p)) * 180 / np.pi
         azimuth = np.arctan2(p[1], p[0]) * 180 / np.pi
         mlab.view(azimuth = azimuth[0], elevation = inclination[0], focalpoint = [0,0,0],
-                  distance = mlc.sad, roll = -self.beam_limiting_device_angle)        
+                  distance = self.sad, roll = -self.beam_limiting_device_angle)        
         
-if __name__ == '__main__':
+def _test(mlc=None):
     import dicom
-    rtplan = dicom.read_file("RTPLAN.dcm")
+    import os
+    rtplan = dicom.read_file(os.path.join(os.path.dirname(__file__), "..", "RTPLAN.dcm"))
     beam = rtplan.Beams[0]
     cp = beam.CPs[0]
     lp = cp.BLDPositions[2].LeafJawPositions
-    lpb = beam.BLDs[2].LeafPositionBoundaries
-    nleaves = len(lpb) - 1
-    mlc=MLC(leaf_boundaries = lpb, 
+    lpb = np.atleast_2d(beam.BLDs[2].LeafPositionBoundaries)
+    nleaves = lpb.shape[1] - 1
+    if mlc == None:
+        mlc=MLC()
+    mlc.set(leaf_boundaries = lpb,
             leaf_positions = np.array([x for x in lp]).reshape((2,nleaves)),
             beam_limiting_device_angle = cp.BeamLimitingDeviceAngle,
             gantry_angle = cp.GantryAngle,
@@ -120,3 +121,6 @@ if __name__ == '__main__':
 
     mlc.display()
 
+
+if __name__ == '__main__':
+    _test()
