@@ -1,4 +1,4 @@
-C:\Python27\python.exe build_dicom.py --outdir example1 `
+C:\Anaconda\python.exe build_dicom.py --outdir example1 `
       --patient-position HFS --values 0 --patients-name "Kalle Kula" `
         --values "sphere,924,25,[50;86.6;0]" --values "box,1124,25,[50;-86.6;0]" `
         --voxelsize "4,3,4" --voxels "48,64,48" --modality CT `
