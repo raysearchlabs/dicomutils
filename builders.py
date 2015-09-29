@@ -384,7 +384,7 @@ class DoseBuilder(ImageBuilder):
         coords = (np.array([x.ravel(), y.ravel(), z.ravel(), np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape))))
         bld = modules.getblds(beam.BeamLimitingDeviceSequence)
         mlcdir, jawdir1, jawdir2 = modules.get_mlc_and_jaw_directions(bld)
-        mlcidx = 0,1 if mlcdir == "MLCX" else 1,0
+        mlcidx = (0,1) if mlcdir == "MLCX" else (1,0)
         
         def add_lightfield_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                   patient_support_angle, patient_position,
@@ -394,18 +394,20 @@ class DoseBuilder(ImageBuilder):
                                                                 table_top, table_top_ecc, sad, isocenter)
             c = Mdb * coords
             # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
-            c2 = -np.array([float(beam.SourceAxisDistance)*c[mlcidx[0],:]/c[2,:],
-                            float(beam.SourceAxisDistance)*c[mlcidx[1],:]/c[2,:]]).squeeze()
+            c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:],
+                            float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
             nleaves = len(bld[mlcdir].LeafPositionBoundaries)-1
             for i in range(nleaves):
-                self.pixel_array.ravel()[(c2[0,:] >= max(float(bldp[jawdir1].LeafJawPositions[0]),
-                                          float(bldp[mlcdir].LeafJawPositions[i])))
-                                       * (c2[0,:] <= min(float(bldp[jawdir1].LeafJawPositions[1]),
-                                          float(bldp[mlcdir].LeafJawPositions[i + nleaves])))
-                                       * (c2[1,:] > max(float(bldp[jawdir2].LeafJawPositions[0]),
-                                          float(bld[mlcdir].LeafPositionBoundaries[i])))
-                                       * (c2[1,:] <= min(float(bldp[jawdir2].LeafJawPositions[1]),
-                                          float(bld[mlcdir].LeafPositionBoundaries[i+1])))] += 1
+                self.pixel_array.ravel()[
+                    (c2[0,:] >= float(bldp['ASYMX'].LeafJawPositions[0])) *
+                    (c2[0,:] <  float(bldp['ASYMX'].LeafJawPositions[1])) *
+                    (c2[1,:] >= float(bldp['ASYMY'].LeafJawPositions[0])) *
+                    (c2[1,:] <  float(bldp['ASYMY'].LeafJawPositions[1])) *
+                    (c2[mlcidx[0],:] >= float(bldp[mlcdir].LeafJawPositions[i])) *
+                    (c2[mlcidx[0],:] <  float(bldp[mlcdir].LeafJawPositions[i + nleaves])) *
+                    (c2[mlcidx[1],:] >= float(bld[mlcdir].LeafPositionBoundaries[i])) *
+                    (c2[mlcidx[1],:] <  float(bld[mlcdir].LeafPositionBoundaries[i+1]))
+                ] += 1
         do_for_all_cps(beam, self.current_study['PatientPosition'], add_lightfield_for_cp)
        
     def build(self):

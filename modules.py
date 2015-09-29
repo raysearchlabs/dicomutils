@@ -541,7 +541,7 @@ def conform_mlc_to_rectangle(beam, x, y, center):
     xy = x,y
     bld = getblds(beam.BeamLimitingDeviceSequence)
     mlcdir, jawdir1, jawdir2 = get_mlc_and_jaw_directions(bld)
-    mlcidx = 0,1 if mlcdir == "MLCX" else 1,0
+    mlcidx = (0,1) if mlcdir == "MLCX" else (1,0)
     nleaves = len(bld[mlcdir].LeafPositionBoundaries)-1
     for cp in beam.ControlPointSequence:
         if hasattr(cp, 'BeamLimitingDevicePositionSequence') and cp.BeamLimitingDevicePositionSequence != None:
@@ -577,7 +577,7 @@ def finalize_mlc(beam):
 def conform_mlc_to_roi(beam, roi, current_study):
     bld = getblds(beam.BeamLimitingDeviceSequence)
     mlcdir, jawdir1, jawdir2 = get_mlc_and_jaw_directions(bld)
-    mlcidx = 0,1 if mlcdir == "MLCX" else 1,0
+    mlcidx = (0,1) if mlcdir == "MLCX" else (1,0)
     def conform_mlc_to_roi_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                   patient_support_angle, patient_position,
                                   table_top, table_top_ecc, sad, isocenter, beam_limiting_device_positions, roi):
