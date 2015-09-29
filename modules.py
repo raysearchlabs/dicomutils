@@ -564,7 +564,7 @@ def finalize_mlc(beam):
     for cp in beam.CPs:
         if not hasattr(cp, 'BLDPositions'):
             continue
-        mlcs = [bld for bld in cp.BLDPositions if bld.RTBLDType == "MLCX"]
+        mlcs = [bld for bld in cp.BLDPositions if bld.RTBLDType == "MLCX" or bld.RTBLDType == "MLCY"]
         if len(mlcs) != 1:
             continue
         mlc = mlcs[0]
