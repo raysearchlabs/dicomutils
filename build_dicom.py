@@ -92,8 +92,8 @@ for study in args.studies:
             isocenter = [float(b) for b in series.isocenter.lstrip('[').rstrip(']').split(";")]
             rp = sb.build_static_plan(nominal_beam_energy = series.nominal_energy,
                                       isocenter = isocenter,
-                                      mlc_direction = mlc_direction,
-                                      sad=sad)
+                                      mlc_direction = series.mlc_direction,
+                                      sad = series.sad)
         elif series.modality == "RTSTRUCT":
             rtstruct = sb.build_structure_set()
         else:
