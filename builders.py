@@ -94,12 +94,13 @@ class StudyBuilder(object):
         self.seriesbuilders['CT'].append(b)
         return b
 
-    def build_static_plan(self, nominal_beam_energy=6, isocenter=None, num_leaves=None, leaf_widths=None, structure_set=None, sad=None):
+    def build_static_plan(self, nominal_beam_energy=6, isocenter=None, num_leaves=None, mlc_direction=None, leaf_widths=None, structure_set=None, sad=None):
         if structure_set == None and len(self.seriesbuilders['RTSTRUCT']) == 1:
             structure_set = self.seriesbuilders['RTSTRUCT'][0]
         b = StaticPlanBuilder(current_study=self.current_study,
                               nominal_beam_energy=nominal_beam_energy, isocenter=isocenter,
-                              num_leaves=num_leaves, leaf_widths=leaf_widths, structure_set=structure_set, sad=sad)
+                              num_leaves=num_leaves, mlc_direction=mlc_direction, leaf_widths=leaf_widths,
+                              structure_set=structure_set, sad=sad)
         self.seriesbuilders['RTPLAN'].append(b)
         return b
 
@@ -228,7 +229,7 @@ class StaticBeamBuilder(object):
         if self.built:
             return self.rtbeam
         self.built = True
-        self.rtbeam = modules.add_static_rt_beam(ds = rtplan, nleaves = planbuilder.num_leaves, leafwidths = planbuilder.leaf_widths, gantry_angle = self.gantry_angle, collimator_angle = self.collimator_angle, patient_support_angle = self.patient_support_angle, table_top = self.table_top, table_top_eccentric = self.table_top_eccentric, isocenter = planbuilder.isocenter, nominal_beam_energy = self.nominal_beam_energy, current_study = self.current_study, sad=self.sad)
+        self.rtbeam = modules.add_static_rt_beam(ds = rtplan, nleaves = planbuilder.num_leaves, mlcdir = planbuilder.mlc_direction, leafwidths = planbuilder.leaf_widths, gantry_angle = self.gantry_angle, collimator_angle = self.collimator_angle, patient_support_angle = self.patient_support_angle, table_top = self.table_top, table_top_eccentric = self.table_top_eccentric, isocenter = planbuilder.isocenter, nominal_beam_energy = self.nominal_beam_energy, current_study = self.current_study, sad=self.sad)
         for call in self.conform_calls:
             call(self.rtbeam)
         if self.jaws == None:
@@ -238,10 +239,11 @@ class StaticBeamBuilder(object):
         return self.rtbeam
 
 class StaticPlanBuilder(object):
-    def __init__(self, current_study, nominal_beam_energy=6, isocenter=None, num_leaves=None, leaf_widths=None, structure_set=None, sad=None):
+    def __init__(self, current_study, nominal_beam_energy=6, isocenter=None, num_leaves=None, mlc_direction=None, leaf_widths=None, structure_set=None, sad=None):
         self.isocenter = isocenter or [0,0,0]
         self.num_leaves = num_leaves or [10,40,10]
         self.leaf_widths = leaf_widths or [10, 5, 10]
+        self.mlc_direction = mlc_direction or "MLCX"
         self.beam_builders = []
         self.current_study = current_study
         self.structure_set = structure_set
@@ -381,6 +383,8 @@ class DoseBuilder(ImageBuilder):
         x,y,z = self.mgrid()
         coords = (np.array([x.ravel(), y.ravel(), z.ravel(), np.ones(x.shape).ravel()]).reshape((4,1,1,np.prod(x.shape))))
         bld = modules.getblds(beam.BeamLimitingDeviceSequence)
+        mlcdir, jawdir1, jawdir2 = modules.get_mlc_and_jaw_directions(bld)
+        mlcidx = 0,1 if mlcdir == "MLCX" else 1,0
         
         def add_lightfield_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                   patient_support_angle, patient_position,
@@ -390,17 +394,18 @@ class DoseBuilder(ImageBuilder):
                                                                 table_top, table_top_ecc, sad, isocenter)
             c = Mdb * coords
             # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
-            c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
-            nleaves = len(bld['MLCX'].LeafPositionBoundaries)-1
+            c2 = -np.array([float(beam.SourceAxisDistance)*c[mlcidx[0],:]/c[2,:],
+                            float(beam.SourceAxisDistance)*c[mlcidx[1],:]/c[2,:]]).squeeze()
+            nleaves = len(bld[mlcdir].LeafPositionBoundaries)-1
             for i in range(nleaves):
-                self.pixel_array.ravel()[(c2[0,:] >= max(float(bldp['ASYMX'].LeafJawPositions[0]),
-                                          float(bldp['MLCX'].LeafJawPositions[i])))
-                                       * (c2[0,:] <= min(float(bldp['ASYMX'].LeafJawPositions[1]),
-                                          float(bldp['MLCX'].LeafJawPositions[i + nleaves])))
-                                       * (c2[1,:] > max(float(bldp['ASYMY'].LeafJawPositions[0]),
-                                          float(bld['MLCX'].LeafPositionBoundaries[i])))
-                                       * (c2[1,:] <= min(float(bldp['ASYMY'].LeafJawPositions[1]),
-                                          float(bld['MLCX'].LeafPositionBoundaries[i+1])))] += 1
+                self.pixel_array.ravel()[(c2[0,:] >= max(float(bldp[jawdir1].LeafJawPositions[0]),
+                                          float(bldp[mlcdir].LeafJawPositions[i])))
+                                       * (c2[0,:] <= min(float(bldp[jawdir1].LeafJawPositions[1]),
+                                          float(bldp[mlcdir].LeafJawPositions[i + nleaves])))
+                                       * (c2[1,:] > max(float(bldp[jawdir2].LeafJawPositions[0]),
+                                          float(bld[mlcdir].LeafPositionBoundaries[i])))
+                                       * (c2[1,:] <= min(float(bldp[jawdir2].LeafJawPositions[1]),
+                                          float(bld[mlcdir].LeafPositionBoundaries[i+1])))] += 1
         do_for_all_cps(beam, self.current_study['PatientPosition'], add_lightfield_for_cp)
        
     def build(self):

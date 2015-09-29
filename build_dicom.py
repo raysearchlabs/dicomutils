@@ -63,6 +63,8 @@ parser.add_argument('--table-top-eccentric', dest='table_top_eccentric', default
                     In IEC61217 terminology, that corresponds to the Ls and theta_e coordinates, respectively.""")
 parser.add_argument('--isocenter', dest='isocenter', default='[0;0;0]',
                     help="""Set the isocenter of the beams.""")
+parser.add_argument('--mlc-direction', dest='mlc_direction', default='MLCX',
+                    help="""Set the direction of the MLC - MLCX or MLCY.""")
 parser.add_argument('--mlc-shape', dest='mlcshapes', default=[], action='append',
                     help="""Add an opening to the current list of mlc openings.
                     For syntax, see the forthcoming documentation or the source code...""")
@@ -88,7 +90,10 @@ for study in args.studies:
             ib = sb.build_dose(num_voxels=num_voxels, voxel_size=voxel_size, center=np.array(series.center))
         elif series.modality == "RTPLAN":
             isocenter = [float(b) for b in series.isocenter.lstrip('[').rstrip(']').split(";")]
-            rp = sb.build_static_plan(nominal_beam_energy=series.nominal_energy, isocenter = isocenter)
+            rp = sb.build_static_plan(nominal_beam_energy = series.nominal_energy,
+                                      isocenter = isocenter,
+                                      mlc_direction = mlc_direction,
+                                      sad=sad)
         elif series.modality == "RTSTRUCT":
             rtstruct = sb.build_structure_set()
         else:
