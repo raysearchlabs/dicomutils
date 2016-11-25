@@ -53,12 +53,16 @@ def build_orientation(patient_position, row_direction, column_direction, frame_o
 
     return sb
 
-
+orientations = [([0,1,0],[1,0,0]),([0,-1,0],[-1,0,0]),([0,1,0],[-1,0,0]),([0,-1,0],[1,0,0])]
+patientpositions = ['HFS','HFP','FFS','FFP','HFDR', 'HFDL', 'FFDR', 'FFDL']
 sbs = []
-sbs.append(build_orientation('HFS', [0,1,0], [1,0,0]))
-sbs.append(build_orientation('HFP', [0,-1,0], [-1,0,0], sbs[0].current_study['FrameofReferenceUID']))
-sbs.append(build_orientation('FFS', [0,1,0], [-1,0,0], sbs[0].current_study['FrameofReferenceUID']))
-sbs.append(build_orientation('FFP', [0,-1,0], [1,0,0], sbs[0].current_study['FrameofReferenceUID']))
-for sb in sbs:
-    sb.write("orientationtests")
+FoR = None
+for o in orientations:
+	for p in patientpositions:
+	        sb = build_orientation(p, o[0], o[1], FoR)
+		sbs.append(sb)
+                FoR = sbs[0].current_study['FrameofReferenceUID']
+    		d = "orientationtests/" + p + "/" + "%s%s%s%s%s%s" % tuple(x for y in o for x in y)
+		os.makedirs(d)
+		sb.write(d)
 
