@@ -20,7 +20,7 @@ class NewStudyAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         namespace.studies.append([])
 parser = argparse.ArgumentParser(description='Create DICOM data.')
-parser.add_argument('--patient-position', dest='patient_position', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDP'],
+parser.add_argument('--patient-position', dest='patient_position', choices = ['HFS', 'HFP', 'FFS', 'FFP', 'HFDR', 'HFDL', 'FFDR', 'FFDL'],
                     help='The patient position written in the images. Required for CT and MR. (default: not specified)')
 parser.add_argument('--patient-id', dest='patient_id', default='Patient ID',
                     help='The patient ID.')
