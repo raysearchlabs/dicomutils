@@ -158,7 +158,18 @@ class StudyBuilder(object):
 
 
 class CTBuilder(ImageBuilder):
-    def __init__(self, current_study, num_voxels, voxel_size, pixel_representation, center=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
+    def __init__(
+            self,
+            current_study,
+            num_voxels,
+            voxel_size,
+            pixel_representation,
+            center=None,
+            rescale_slope=1,
+            rescale_intercept=-1024,
+            column_direction=None,
+            row_direction=None,
+            slice_direction=None):
         self.num_voxels = num_voxels
         self.voxel_size = voxel_size
         self.pixel_representation = pixel_representation
@@ -197,7 +208,9 @@ class CTBuilder(ImageBuilder):
             pixel_representation=self.pixel_representation,
             voxel_size=self.voxel_size,
             center=self.center,
-            current_study=self.current_study)
+            current_study=self.current_study,
+            rescale_slope=self.rescale_slope,
+            rescale_intercept=self.rescale_intercept)
         x, y, z = self.mgrid()
         for slicei in range(len(cts)):
             cts[slicei].ImagePositionPatient = [x[0,0,slicei],y[0,0,slicei],z[0,0,slicei]]
@@ -215,8 +228,8 @@ class MRBuilder(ImageBuilder):
             voxel_size,
             pixel_representation,
             center=None,
-            rescale_slope=1,
-            rescale_intercept=0,
+            rescale_slope=1.0,
+            rescale_intercept=0.0,
             column_direction=None,
             row_direction=None,
             slice_direction=None):
@@ -258,7 +271,9 @@ class MRBuilder(ImageBuilder):
             pixel_representation=self.pixel_representation,
             voxel_size=self.voxel_size,
             center=self.center,
-            current_study=self.current_study)
+            current_study=self.current_study,
+            rescale_slope=self.rescale_slope,
+            rescale_intercept=self.rescale_intercept)
         x, y, z = self.mgrid()
         for slicei in range(len(mrs)):
             mrs[slicei].ImagePositionPatient = [x[0, 0, slicei], y[0, 0, slicei], z[0, 0, slicei]]
