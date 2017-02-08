@@ -32,13 +32,15 @@ parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
                     help='The size of a single voxel in mm. (default: 1,2,4)')
 parser.add_argument('--voxels', dest='NumVoxels', default="64,32,16",
                     help='The number of voxels in the dataset. (default: 64,32,16)')
-parser.add_argument('--modality', dest='modality', default=[], choices = ['CT', "RTDOSE", "RTPLAN", "RTSTRUCT"],
+parser.add_argument('--modality', dest='modality', default=[], choices=["CT", "MR", "RTDOSE", "RTPLAN", "RTSTRUCT"],
                     help='The modality to write. (default: CT)', action=ModalityGroupAction)
 parser.add_argument('--nominal-energy', dest='nominal_energy', default=None,
                     help='The nominal energy of beams in an RT Plan.')
 parser.add_argument('--values', dest='values', default=[], action='append', metavar='VALUE | SHAPE{,PARAMETERS}',
                     help="""Set the Hounsfield or dose values in a volume to the given value.\n\n\n
                     For syntax, see the forthcoming documentation or the source code...""")
+parser.add_argument('--pixel_representation', dest='pixel_representation', default='signed', choices=['signed', 'unsigned'],
+                    help="""signed: Stored pixel value type is int16, unsigned: Stored pixel value type is uint16.""")
 parser.add_argument('--center', dest='center', default="[0;0;0]", help="""Center of the image, in dicom patient coordinates.""")
 parser.add_argument('--sad', dest='sad', default=1000, help="The Source to Axis distance.")
 parser.add_argument('--structure', dest='structures', default=[], action='append', metavar='SHAPE{,PARAMETERS}',
@@ -75,6 +77,11 @@ parser.add_argument('--outdir', dest='outdir', default='.',
 args = parser.parse_args(namespace = argparse.Namespace(studies=[[]]))
 voxel_size = [float(x) for x in args.VoxelSize.split(",")]
 num_voxels = [int(x) for x in args.NumVoxels.split(",")]
+if args.pixel_representation is 'signed':
+    pixel_representation = 1
+else:
+    pixel_representation = 0
+
 if not os.path.exists(args.outdir):
     os.makedirs(args.outdir)
 for study in args.studies:
@@ -85,9 +92,24 @@ for study in args.studies:
         if series.modality == "CT":
             if 'PatientPosition' not in sb.current_study:
                 parser.error("Patient position must be specified when writing CT images!")
-            ib = sb.build_ct(num_voxels=num_voxels, voxel_size=voxel_size, center=np.array(series.center))
+            ib = sb.build_ct(
+                num_voxels=num_voxels,
+                voxel_size=voxel_size,
+                pixel_representation=pixel_representation,
+                center=np.array(series.center))
+        if series.modality == "MR":
+            if 'PatientPosition' not in sb.current_study:
+                parser.error("Patient position must be specified when writing MR images!")
+            ib = sb.build_mr(
+                num_voxels=num_voxels,
+                voxel_size=voxel_size,
+                pixel_representation=pixel_representation,
+                center=np.array(series.center))
         elif series.modality == "RTDOSE":
-            ib = sb.build_dose(num_voxels=num_voxels, voxel_size=voxel_size, center=np.array(series.center))
+            ib = sb.build_dose(
+                num_voxels=num_voxels,
+                voxel_size=voxel_size,
+                center=np.array(series.center))
         elif series.modality == "RTPLAN":
             isocenter = [float(b) for b in series.isocenter.lstrip('[').rstrip(']').split(";")]
             rp = sb.build_static_plan(nominal_beam_energy = series.nominal_energy,
@@ -137,6 +159,8 @@ for study in args.studies:
         if series.patients_birthdate != None:
             sb.current_study['PatientsBirthDate'] = series.patients_birthdate
         if series.modality == "CT":
+            ib.build()
+        elif series.modality == "MR":
             ib.build()
         elif series.modality == "RTDOSE":
             ib.build()

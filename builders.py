@@ -80,7 +80,7 @@ class ImageBuilder(object):
 
 class StudyBuilder(object):
     def __init__(self, patient_position="HFS", patient_id="", patients_name = "", patients_birthdate = ""):
-        self.modalityorder = ["CT", "RTSTRUCT", "RTPLAN", "RTDOSE"]
+        self.modalityorder = ["CT", "MR", "RTSTRUCT", "RTPLAN", "RTDOSE"]
         self.current_study = {}
         self.current_study['PatientID'] = patient_id
         self.current_study['PatientsName'] = patients_name
@@ -89,9 +89,14 @@ class StudyBuilder(object):
         self.seriesbuilders = defaultdict(lambda: [])
         self.built = False
 
-    def build_ct(self, num_voxels, voxel_size, center=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
-        b = CTBuilder(self.current_study, num_voxels, voxel_size, center=center, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
+    def build_ct(self, num_voxels, voxel_size, pixel_representation, center=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
+        b = CTBuilder(self.current_study, num_voxels, voxel_size, pixel_representation, center=center, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
         self.seriesbuilders['CT'].append(b)
+        return b
+
+    def build_mr(self, num_voxels, voxel_size, pixel_representation, center=None, rescale_slope=1, rescale_intercept=0, column_direction=None, row_direction=None, slice_direction=None):
+        b = MRBuilder(self.current_study, num_voxels, voxel_size, pixel_representation, center=center, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
+        self.seriesbuilders['MR'].append(b)
         return b
 
     def build_static_plan(self, nominal_beam_energy=6, isocenter=None, num_leaves=None, mlc_direction=None, leaf_widths=None, structure_set=None, sad=None):
@@ -151,16 +156,24 @@ class StudyBuilder(object):
                     if print_filenames:
                         print ds.filename
 
+
 class CTBuilder(ImageBuilder):
-    def __init__(self, current_study, num_voxels, voxel_size, center=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
+    def __init__(self, current_study, num_voxels, voxel_size, pixel_representation, center=None, rescale_slope=1, rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
         self.num_voxels = num_voxels
         self.voxel_size = voxel_size
+        self.pixel_representation = pixel_representation
         self.rescale_slope = rescale_slope
-        if center == None:
+        if center is None:
             center = [0,0,0]
         self.center = np.array(center)
         self.rescale_intercept = rescale_intercept
-        self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
+
+        assert self.pixel_representation == 0 or self.pixel_representation == 1
+        if self.pixel_representation == 0:
+            self.pixel_array = np.zeros(self.num_voxels, dtype=np.uint16)
+        else:
+            self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
+
         if column_direction == None or row_direction == None:
             assert column_direction == None and row_direction == None
             column_direction = [1,0,0]
@@ -179,13 +192,79 @@ class CTBuilder(ImageBuilder):
     def build(self):
         if self.built:
             return self.datasets
-        cts = modules.build_ct(ct_data = self.pixel_array, voxel_size = self.voxel_size, center = self.center, current_study = self.current_study)
-        x,y,z = self.mgrid()
+        cts = modules.build_ct(
+            ct_data=self.pixel_array,
+            pixel_representation=self.pixel_representation,
+            voxel_size=self.voxel_size,
+            center=self.center,
+            current_study=self.current_study)
+        x, y, z = self.mgrid()
         for slicei in range(len(cts)):
             cts[slicei].ImagePositionPatient = [x[0,0,slicei],y[0,0,slicei],z[0,0,slicei]]
             cts[slicei].ImageOrientationPatient = self.ImageOrientationPatient
         self.built = True
         self.datasets = cts
+        return self.datasets
+
+
+class MRBuilder(ImageBuilder):
+    def __init__(
+            self,
+            current_study,
+            num_voxels,
+            voxel_size,
+            pixel_representation,
+            center=None,
+            rescale_slope=1,
+            rescale_intercept=0,
+            column_direction=None,
+            row_direction=None,
+            slice_direction=None):
+        self.num_voxels = num_voxels
+        self.voxel_size = voxel_size
+        self.pixel_representation = pixel_representation
+        self.rescale_slope = rescale_slope
+        if center is None:
+            center = [0, 0, 0]
+        self.center = np.array(center)
+        self.rescale_intercept = rescale_intercept
+
+        assert self.pixel_representation == 0 or self.pixel_representation == 1
+        if self.pixel_representation == 0:
+            self.pixel_array = np.zeros(self.num_voxels, dtype=np.uint16)
+        else:
+            self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
+
+        if column_direction is None or row_direction is None:
+            assert column_direction is None and row_direction is None
+            column_direction = [1, 0, 0]
+            row_direction = [0, 1, 0]
+        if slice_direction is None:
+            slice_direction = np.cross(column_direction, row_direction)
+        slice_direction = slice_direction / np.linalg.norm(slice_direction)
+        self.ImageOrientationPatient = column_direction + row_direction
+        self.slice_direction = slice_direction
+        self.current_study = current_study
+        self.built = False
+
+    def real_value_to_stored_value(self, real_value):
+        return (real_value - self.rescale_intercept) / self.rescale_slope
+
+    def build(self):
+        if self.built:
+            return self.datasets
+        mrs = modules.build_mr(
+            mr_data=self.pixel_array,
+            pixel_representation=self.pixel_representation,
+            voxel_size=self.voxel_size,
+            center=self.center,
+            current_study=self.current_study)
+        x, y, z = self.mgrid()
+        for slicei in range(len(mrs)):
+            mrs[slicei].ImagePositionPatient = [x[0, 0, slicei], y[0, 0, slicei], z[0, 0, slicei]]
+            mrs[slicei].ImageOrientationPatient = self.ImageOrientationPatient
+        self.built = True
+        self.datasets = mrs
         return self.datasets
 
 from coordinates import TableTop, TableTopEcc

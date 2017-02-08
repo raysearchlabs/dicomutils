@@ -31,7 +31,7 @@ def get_empty_dataset(filename, storagesopclass, sopinstanceuid):
     ds = dicom.dataset.FileDataset(filename, {}, file_meta=file_meta, preamble="\0"*128)
     return ds
 
-def get_default_ct_dataset(sopinstanceuid, current_study):
+def get_default_ct_dataset(sopinstanceuid, current_study, pixel_representation):
     if 'StudyTime' not in current_study:
         current_study['StudyTime'] = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyDate' not in current_study:
@@ -42,7 +42,7 @@ def get_default_ct_dataset(sopinstanceuid, current_study):
     ds = get_empty_dataset(filename, "CT Image Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "CT Image Storage", sopinstanceuid)
     get_ct_image_module(ds)
-    get_image_pixel_macro(ds)
+    get_image_pixel_macro(ds, pixel_representation)
     get_patient_module(ds, current_study)
     get_general_study_module(ds, current_study)
     get_general_series_module(ds, DT, TM, "CT")
@@ -51,6 +51,29 @@ def get_default_ct_dataset(sopinstanceuid, current_study):
     get_general_image_module(ds, DT, TM)
     get_image_plane_module(ds)
     return ds
+
+
+def get_default_mr_dataset(sopinstanceuid, current_study, pixel_representation):
+    if 'StudyTime' not in current_study:
+        current_study['StudyTime'] = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    if 'StudyDate' not in current_study:
+        current_study['StudyDate'] = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
+    dt = current_study['StudyDate']
+    tm = current_study['StudyTime']
+    filename = "MR_%s.dcm" % (sopinstanceuid,)
+    ds = get_empty_dataset(filename, "MR Image Storage", sopinstanceuid)
+    get_sop_common_module(ds, dt, tm, "MR Image Storage", sopinstanceuid)
+    get_mr_image_module(ds)
+    get_image_pixel_macro(ds, pixel_representation)
+    get_patient_module(ds, current_study)
+    get_general_study_module(ds, current_study)
+    get_general_series_module(ds, dt, tm, "MR")
+    get_frame_of_reference_module(ds)
+    get_general_equipment_module(ds)
+    get_general_image_module(ds, dt, tm)
+    get_image_plane_module(ds)
+    return ds
+
 
 def get_default_rt_dose_dataset(current_study, rtplan):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
@@ -171,11 +194,32 @@ def get_ct_image_module(ds):
     ds.KVP = ""
     ds.AcquisitionNumber = ""
 
-def get_image_pixel_macro(ds):
+
+def get_mr_image_module(ds):
+    # Type 1
+    ds.ImageType = "ORIGINAL\SECONDARY\OTHER"
+    ds.SamplesperPixel = 1
+    ds.PhotometricInterpretation = "MONOCHROME2"
+    ds.BitsAllocated = 16
+    ds.BitsStored = 16
+    ds.HighBit = 15
+    ds.ScanningSequence = "RM"
+    ds.SequenceVariant = "NONE"
+    ds.ScanOptions = "PER"
+    ds.RescaleIntercept = 0.0
+    ds.RescaleSlope = 1.0
+    # Type 2
+    ds.MRAcquisitionType = "2D"
+    ds.EchoTime = 1  # [ms]
+    ds.EchoTrainLength = 1  # ???
+    ds.RepetitionTime = 1  # [ms]
+
+
+def get_image_pixel_macro(ds, pixel_representation):
     # Type 1
     ds.Rows = 256
     ds.Columns = 256
-    ds.PixelRepresentation = 0
+    ds.PixelRepresentation = pixel_representation
 
 def get_patient_module(ds, current_study):
     # Type 2
@@ -204,6 +248,8 @@ def get_general_series_module(ds, DT, TM, modality):
     ds.SeriesNumber = ""
     # Type 2C on Modality in ['CT', 'MR', 'Enhanced CT', 'Enhanced MR Image', 'Enhanced Color MR Image', 'MR Spectroscopy']. May not be present if Patient Orientation Code Sequence is present.
     #ds.PatientPosition = "HFS"
+    if modality is 'MR':
+        ds.Laterality = 'R'
 
     # Type 3
     ds.SeriesDate = DT
@@ -1013,8 +1059,7 @@ def build_rt_structure_set(ref_images, current_study, **kwargs):
     return rs
 
 
-
-def build_ct(ct_data, voxel_size, center, current_study, **kwargs):
+def build_ct(ct_data, pixel_representation, voxel_size, center, current_study, **kwargs):
     nVoxels = ct_data.shape
     ctbaseuid = generate_uid()
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
@@ -1023,7 +1068,7 @@ def build_ct(ct_data, voxel_size, center, current_study, **kwargs):
     cts=[]
     for z in range(nVoxels[2]):
         sopinstanceuid = "%s.%i" % (ctbaseuid, z)
-        ct = get_default_ct_dataset(sopinstanceuid, current_study)
+        ct = get_default_ct_dataset(sopinstanceuid, current_study, pixel_representation)
         ct.SeriesInstanceUID = seriesuid
         ct.StudyInstanceUID = studyuid
         ct.FrameofReferenceUID = FoRuid
@@ -1042,3 +1087,35 @@ def build_ct(ct_data, voxel_size, center, current_study, **kwargs):
                 setattr(ct, k, v)
         cts.append(ct)
     return cts
+
+
+def build_mr(mr_data, pixel_representation, voxel_size, center, current_study, **kwargs):
+    voxel_count = mr_data.shape
+    mr_base_uid = generate_uid()
+    for_uid = get_current_study_uid('FrameofReferenceUID', current_study)
+    study_uid = get_current_study_uid('StudyUID', current_study)
+    series_uid = generate_uid()
+    mrs = []
+    for z in range(voxel_count[2]):
+        sop_instance_uid = "%s.%i" % (mr_base_uid, z)
+        mr = get_default_mr_dataset(sop_instance_uid, current_study, pixel_representation)
+        mr.SeriesInstanceUID = series_uid
+        mr.StudyInstanceUID = study_uid
+        mr.FrameofReferenceUID = for_uid
+        mr.Rows = voxel_count[1]
+        mr.Columns = voxel_count[0]
+        mr.PixelSpacing = [voxel_size[1], voxel_size[0]]
+        mr.SliceThickness = voxel_size[2]
+        mr.ImagePositionPatient = [
+            center[0] - (voxel_count[0] - 1) * voxel_size[0] / 2.0,
+            center[1] - (voxel_count[1] - 1) * voxel_size[1] / 2.0,
+            center[2] - (voxel_count[2] - 1) * voxel_size[2] / 2.0 + z * voxel_size[2]
+        ]
+        mr.PixelData = mr_data[:, :, z].tostring(order='F')
+        if 'PatientPosition' in current_study:
+            mr.PatientPosition = current_study['PatientPosition']
+        for k, v in kwargs.iteritems():
+            if v is not None:
+                setattr(mr, k, v)
+        mrs.append(mr)
+    return mrs
