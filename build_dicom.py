@@ -77,7 +77,7 @@ parser.add_argument('--outdir', dest='outdir', default='.',
 args = parser.parse_args(namespace = argparse.Namespace(studies=[[]]))
 voxel_size = [float(x) for x in args.VoxelSize.split(",")]
 num_voxels = [int(x) for x in args.NumVoxels.split(",")]
-if args.pixel_representation is 'signed':
+if args.pixel_representation == 'signed':
     pixel_representation = 1
 else:
     pixel_representation = 0
