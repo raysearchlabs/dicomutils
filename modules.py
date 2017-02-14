@@ -54,7 +54,7 @@ def get_default_ct_dataset(sopinstanceuid, current_study, pixel_representation, 
     return ds
 
 
-def get_default_mr_dataset(sopinstanceuid, current_study, pixel_representation, rescale_slope, rescale_intercept):
+def get_default_mr_dataset(sopinstanceuid, current_study, pixel_representation):
     if 'StudyTime' not in current_study:
         current_study['StudyTime'] = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyDate' not in current_study:
@@ -64,7 +64,7 @@ def get_default_mr_dataset(sopinstanceuid, current_study, pixel_representation, 
     filename = "MR_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "MR Image Storage", sopinstanceuid)
     get_sop_common_module(ds, dt, tm, "MR Image Storage", sopinstanceuid)
-    get_mr_image_module(ds, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept)
+    get_mr_image_module(ds)
     get_image_pixel_macro(ds, pixel_representation)
     get_patient_module(ds, current_study)
     get_general_study_module(ds, current_study)
@@ -196,7 +196,7 @@ def get_ct_image_module(ds, rescale_slope=1.0, rescale_intercept=-1024.0):
     ds.AcquisitionNumber = ""
 
 
-def get_mr_image_module(ds, rescale_slope=1.0, rescale_intercept=0.0):
+def get_mr_image_module(ds):
     # Type 1
     ds.ImageType = "ORIGINAL\SECONDARY\OTHER"
     ds.SamplesperPixel = 1
@@ -207,8 +207,6 @@ def get_mr_image_module(ds, rescale_slope=1.0, rescale_intercept=0.0):
     ds.ScanningSequence = "RM"
     ds.SequenceVariant = "NONE"
     ds.ScanOptions = "PER"
-    ds.RescaleIntercept = rescale_intercept
-    ds.RescaleSlope = rescale_slope
     # Type 2
     ds.MRAcquisitionType = "2D"
     ds.EchoTime = 1  # [ms]
@@ -1095,7 +1093,7 @@ def build_ct(ct_data, pixel_representation, rescale_slope, rescale_intercept, vo
     return cts
 
 
-def build_mr(mr_data, pixel_representation, rescale_slope, rescale_intercept, voxel_size, center, current_study, **kwargs):
+def build_mr(mr_data, pixel_representation, voxel_size, center, current_study, **kwargs):
     voxel_count = mr_data.shape
     mr_base_uid = generate_uid()
     for_uid = get_current_study_uid('FrameofReferenceUID', current_study)
@@ -1107,9 +1105,7 @@ def build_mr(mr_data, pixel_representation, rescale_slope, rescale_intercept, vo
         mr = get_default_mr_dataset(
             sop_instance_uid,
             current_study,
-            pixel_representation,
-            rescale_slope=rescale_slope,
-            rescale_intercept=rescale_intercept)
+            pixel_representation)
         mr.SeriesInstanceUID = series_uid
         mr.StudyInstanceUID = study_uid
         mr.FrameofReferenceUID = for_uid

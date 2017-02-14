@@ -94,8 +94,8 @@ class StudyBuilder(object):
         self.seriesbuilders['CT'].append(b)
         return b
 
-    def build_mr(self, num_voxels, voxel_size, pixel_representation, center=None, rescale_slope=1, rescale_intercept=0, column_direction=None, row_direction=None, slice_direction=None):
-        b = MRBuilder(self.current_study, num_voxels, voxel_size, pixel_representation, center=center, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
+    def build_mr(self, num_voxels, voxel_size, pixel_representation, center=None, column_direction=None, row_direction=None, slice_direction=None):
+        b = MRBuilder(self.current_study, num_voxels, voxel_size, pixel_representation, center=center, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
         self.seriesbuilders['MR'].append(b)
         return b
 
@@ -228,19 +228,15 @@ class MRBuilder(ImageBuilder):
             voxel_size,
             pixel_representation,
             center=None,
-            rescale_slope=1.0,
-            rescale_intercept=0.0,
             column_direction=None,
             row_direction=None,
             slice_direction=None):
         self.num_voxels = num_voxels
         self.voxel_size = voxel_size
         self.pixel_representation = pixel_representation
-        self.rescale_slope = rescale_slope
         if center is None:
             center = [0, 0, 0]
         self.center = np.array(center)
-        self.rescale_intercept = rescale_intercept
 
         assert self.pixel_representation == 0 or self.pixel_representation == 1
         if self.pixel_representation == 0:
@@ -261,7 +257,7 @@ class MRBuilder(ImageBuilder):
         self.built = False
 
     def real_value_to_stored_value(self, real_value):
-        return (real_value - self.rescale_intercept) / self.rescale_slope
+        return real_value
 
     def build(self):
         if self.built:
@@ -271,9 +267,7 @@ class MRBuilder(ImageBuilder):
             pixel_representation=self.pixel_representation,
             voxel_size=self.voxel_size,
             center=self.center,
-            current_study=self.current_study,
-            rescale_slope=self.rescale_slope,
-            rescale_intercept=self.rescale_intercept)
+            current_study=self.current_study)
         x, y, z = self.mgrid()
         for slicei in range(len(mrs)):
             mrs[slicei].ImagePositionPatient = [x[0, 0, slicei], y[0, 0, slicei], z[0, 0, slicei]]

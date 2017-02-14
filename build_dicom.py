@@ -45,7 +45,8 @@ parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
                     help='The size of a single voxel in mm. (default: 1,2,4)')
 parser.add_argument('--voxels', dest='NumVoxels', default="64,32,16",
                     help='The number of voxels in the dataset. (default: 64,32,16)')
-parser.add_argument('--modality', dest='modality', default=[], choices=["CT", "MR", "RTDOSE", "RTPLAN", "RTSTRUCT"],
+parser.add_argument('--modality', dest='modality', default=[],
+                    choices=["CT", "MR", "PT", "RTDOSE", "RTPLAN", "RTSTRUCT"],
                     help='The modality to write. (default: CT)', action=ModalityGroupAction)
 parser.add_argument('--nominal-energy', dest='nominal_energy', default=None,
                     help='The nominal energy of beams in an RT Plan.')
@@ -131,7 +132,7 @@ for study in args.studies:
                 rescale_slope=rescale_slope,
                 rescale_intercept=rescale_intercept,
                 center=np.array(series.center))
-        if series.modality == "MR":
+        elif series.modality == "MR":
             if 'PatientPosition' not in sb.current_study:
                 parser.error("Patient position must be specified when writing MR images!")
             if args.rescale_slope is None:
@@ -150,6 +151,19 @@ for study in args.studies:
                 rescale_slope=rescale_slope,
                 rescale_intercept=rescale_intercept,
                 center=np.array(series.center))
+        elif series.modality == "PT":
+            if 'PatientPosition' not in sb.current_study:
+                parser.error("Patient position must be specified when writing MR images!")
+
+            ib = sb.build_pt(
+                num_voxels=num_voxels,
+                voxel_size=voxel_size,
+                pixel_representation=pixel_representation,
+                rescale_slope=rescale_slope,
+                center=np.array(series.center)
+            )
+
+
         elif series.modality == "RTDOSE":
             ib = sb.build_dose(
                 num_voxels=num_voxels,
