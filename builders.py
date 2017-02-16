@@ -89,9 +89,10 @@ class StudyBuilder(object):
         self.seriesbuilders = defaultdict(lambda: [])
         self.built = False
 
-    def build_ct(self, num_voxels, voxel_size, pixel_representation, center=None, rescale_slope=1,
-                 rescale_intercept=-1024, column_direction=None, row_direction=None, slice_direction=None):
-        b = CTBuilder(self.current_study, num_voxels, voxel_size, pixel_representation,
+    def build_ct(self, num_voxels, voxel_size, pixel_representation, rescale_slope, rescale_intercept,
+                 center=None, column_direction=None, row_direction=None, slice_direction=None):
+        b = CTBuilder(self.current_study, num_voxels, voxel_size,
+                      pixel_representation=pixel_representation,
                       center=center,
                       rescale_slope=rescale_slope,
                       rescale_intercept=rescale_intercept,
@@ -103,7 +104,8 @@ class StudyBuilder(object):
 
     def build_mr(self, num_voxels, voxel_size, pixel_representation, center=None, column_direction=None,
                  row_direction=None, slice_direction=None):
-        b = MRBuilder(self.current_study, num_voxels, voxel_size, pixel_representation,
+        b = MRBuilder(self.current_study, num_voxels, voxel_size,
+                      pixel_representation=pixel_representation,
                       center=center,
                       column_direction=column_direction,
                       row_direction=row_direction,
@@ -111,10 +113,12 @@ class StudyBuilder(object):
         self.seriesbuilders['MR'].append(b)
         return b
 
-    def build_pt(self, num_voxels, voxel_size, pixel_representation, center=None, column_direction=None,
+    def build_pt(self, num_voxels, voxel_size, pixel_representation, rescale_slope, center=None, column_direction=None,
                  row_direction=None, slice_direction=None):
-        b = PTBuilder(self.current_study, num_voxels, voxel_size, pixel_representation,
+        b = PTBuilder(self.current_study, num_voxels, voxel_size,
+                      pixel_representation=pixel_representation,
                       center=center,
+                      rescale_slope=rescale_slope,
                       column_direction=column_direction,
                       row_direction=row_direction,
                       slice_direction=slice_direction)
@@ -186,9 +190,9 @@ class CTBuilder(ImageBuilder):
             num_voxels,
             voxel_size,
             pixel_representation,
+            rescale_slope,
+            rescale_intercept,
             center=None,
-            rescale_slope=1,
-            rescale_intercept=-1024,
             column_direction=None,
             row_direction=None,
             slice_direction=None):
@@ -196,10 +200,10 @@ class CTBuilder(ImageBuilder):
         self.voxel_size = voxel_size
         self.pixel_representation = pixel_representation
         self.rescale_slope = rescale_slope
-        if center is None:
-            center = [0,0,0]
-        self.center = np.array(center)
         self.rescale_intercept = rescale_intercept
+        if center is None:
+            center = [0, 0, 0]
+        self.center = np.array(center)
 
         assert self.pixel_representation == 0 or self.pixel_representation == 1
         if self.pixel_representation == 0:
@@ -306,6 +310,7 @@ class PTBuilder(ImageBuilder):
             num_voxels,
             voxel_size,
             pixel_representation,
+            rescale_slope,
             center=None,
             column_direction=None,
             row_direction=None,
@@ -313,6 +318,7 @@ class PTBuilder(ImageBuilder):
         self.num_voxels = num_voxels
         self.voxel_size = voxel_size
         self.pixel_representation = pixel_representation
+        self.rescale_slope = rescale_slope
         if center is None:
             center = [0, 0, 0]
         self.center = np.array(center)
@@ -344,6 +350,7 @@ class PTBuilder(ImageBuilder):
         pts = modules.build_pt(
             pt_data=self.pixel_array,
             pixel_representation=self.pixel_representation,
+            rescale_slope=self.rescale_slope,
             voxel_size=self.voxel_size,
             center=self.center,
             current_study=self.current_study)

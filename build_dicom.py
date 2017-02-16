@@ -57,9 +57,9 @@ parser.add_argument('--pixel-representation', dest='pixel_representation', defau
                     choices=['signed', 'unsigned'],
                     help='signed: Stored pixel value type is int16, unsigned: Stored pixel value type is uint16.')
 parser.add_argument('--rescale-slope', dest='rescale_slope', type=float,
-                    help="""Set the rescale slope (defaults - CT: 1.0, MR: 1.0).""")
+                    help="""Set the rescale slope (defaults - CT: 1.0, PET: 1.0).""")
 parser.add_argument('--rescale-intercept', dest='rescale_intercept', type=float,
-                    help="""Set the rescale intercept (defaults - CT: -1024.0, MR: 0.0).""")
+                    help="""Set the rescale intercept (defaults - CT: -1024.0).""")
 parser.add_argument('--center', dest='center', default="[0;0;0]",
                     help="""Center of the image, in dicom patient coordinates.""")
 parser.add_argument('--sad', dest='sad', default=1000, help="The Source to Axis distance.")
@@ -148,22 +148,21 @@ for study in args.studies:
                 num_voxels=num_voxels,
                 voxel_size=voxel_size,
                 pixel_representation=pixel_representation,
-                rescale_slope=rescale_slope,
-                rescale_intercept=rescale_intercept,
                 center=np.array(series.center))
         elif series.modality == "PT":
             if 'PatientPosition' not in sb.current_study:
                 parser.error("Patient position must be specified when writing MR images!")
+            if args.rescale_slope is None:
+                rescale_slope = 1.0
+            else:
+                rescale_slope = args.rescale_slope
 
             ib = sb.build_pt(
                 num_voxels=num_voxels,
                 voxel_size=voxel_size,
                 pixel_representation=pixel_representation,
                 rescale_slope=rescale_slope,
-                center=np.array(series.center)
-            )
-
-
+                center=np.array(series.center))
         elif series.modality == "RTDOSE":
             ib = sb.build_dose(
                 num_voxels=num_voxels,
