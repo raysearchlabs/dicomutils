@@ -220,6 +220,8 @@ for study in args.studies:
             ib.build()
         elif series.modality == "MR":
             ib.build()
+        elif series.modality == "PT":
+            ib.build()
         elif series.modality == "RTDOSE":
             ib.build()
         elif series.modality == "RTPLAN":
