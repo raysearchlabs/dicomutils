@@ -81,7 +81,13 @@ def get_default_mr_dataset(sopinstanceuid, current_study, pixel_representation):
     return ds
 
 
-def get_default_pt_dataset(sopinstanceuid, current_study, image_index, number_of_slices, pixel_representation):
+def get_default_pt_dataset(
+        sopinstanceuid,
+        current_study,
+        image_index,
+        number_of_slices,
+        pixel_representation,
+        rescale_slope):
     if 'StudyTime' not in current_study:
         current_study['StudyTime'] = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyDate' not in current_study:
@@ -91,7 +97,7 @@ def get_default_pt_dataset(sopinstanceuid, current_study, image_index, number_of
     filename = "PT_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "Positron Emission Tomography Image Storage", sopinstanceuid)
     get_sop_common_module(ds, dt, tm, "Positron Emission Tomography Image Storage", sopinstanceuid)
-    get_pet_image_module(ds, image_index)
+    get_pet_image_module(ds, image_index, rescale_slope=rescale_slope)
     get_image_pixel_macro(ds, pixel_representation)
     get_patient_module(ds, current_study)
     get_general_study_module(ds, current_study)
@@ -244,7 +250,7 @@ def get_mr_image_module(ds):
     ds.RepetitionTime = 1  # [ms]
 
 
-def get_pet_image_module(ds, image_index, rescale_slope=1.0):
+def get_pet_image_module(ds, image_index, rescale_slope):
     """C.8.9.4"""
     # Type 1
     ds.ImageType = "ORIGINAL\PRIMARY"
@@ -1225,7 +1231,7 @@ def build_mr(mr_data, pixel_representation, voxel_size, center, current_study, *
     return mrs
 
 
-def build_pt(pt_data, pixel_representation, voxel_size, center, current_study, **kwargs):
+def build_pt(pt_data, pixel_representation, rescale_slope, voxel_size, center, current_study, **kwargs):
     voxel_count = pt_data.shape
     pt_base_uid = generate_uid()
     for_uid = get_current_study_uid('FrameofReferenceUID', current_study)
@@ -1239,7 +1245,8 @@ def build_pt(pt_data, pixel_representation, voxel_size, center, current_study, *
             current_study,
             image_index=z,
             number_of_slices=voxel_count[2],
-            pixel_representation=pixel_representation)
+            pixel_representation=pixel_representation,
+            rescale_slope=rescale_slope)
         pt.SeriesInstanceUID = series_uid
         pt.StudyInstanceUID = study_uid
         pt.FrameofReferenceUID = for_uid

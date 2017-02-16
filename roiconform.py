@@ -11,7 +11,12 @@ if not os.path.exists(tmpdir):
     os.mkdir(tmpdir)
 
 sb = StudyBuilder(patient_position="HFS", patient_id="123", patients_name="Kalle^Kula", patients_birthdate = "20121212")
-ct = sb.build_ct(num_voxels = [48,64,75], voxel_size = [4,3,4], rescale_slope = 1, rescale_intercept = -1024)
+ct = sb.build_ct(
+    num_voxels=[48, 64, 75],
+    voxel_size=[4, 3, 4],
+    pixel_representation=0,
+    rescale_slope=1,
+    rescale_intercept=-1024)
 ct.clear(real_value = 0)
 print ct.pixel_array.max(),ct.pixel_array.min()
 ct.add_sphere(radius = 25, center = [0,0,0], real_value = -1000, mode = 'set')

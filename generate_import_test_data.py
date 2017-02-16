@@ -178,7 +178,8 @@ def generate_pt_unsigned_in_short_range(out_dir, patient_id):
                       patients_birthdate="20121212")
     pt = sb.build_pt(num_voxels=[48, 64, 10],
                      voxel_size=[4, 3, 4],  # [mm]
-                     pixel_representation=get_pixel_representation('unsigned'))
+                     pixel_representation=get_pixel_representation('unsigned'),
+                     rescale_slope=1)
     pt.clear(stored_value=0)
     pt.add_box(size=[25, 50, 5], center=[0, 0, 0], stored_value=12345, mode='set')
 
@@ -197,7 +198,8 @@ def generate_pt_unsigned_not_in_short_range(out_dir, patient_id):
                       patients_birthdate="20121212")
     pt = sb.build_pt(num_voxels=[48, 64, 10],
                      voxel_size=[4, 3, 4],  # [mm]
-                     pixel_representation=get_pixel_representation('unsigned'))
+                     pixel_representation=get_pixel_representation('unsigned'),
+                     rescale_slope=1)
     pt.clear(stored_value=0)
     pt.add_box(size=[25, 50, 5], center=[0, 0, 0], stored_value=54321, mode='set')
 
@@ -216,7 +218,8 @@ def generate_pt_signed_in_short_range(out_dir, patient_id):
                       patients_birthdate="20121212")
     pt = sb.build_pt(num_voxels=[48, 64, 10],
                      voxel_size=[4, 3, 4],  # [mm]
-                     pixel_representation=get_pixel_representation('unsigned'))
+                     pixel_representation=get_pixel_representation('unsigned'),
+                     rescale_slope=1)
     pt.clear(stored_value=0)
     pt.add_box(size=[25, 50, 5], center=[0, 0, 0], stored_value=12345, mode='set')
 
