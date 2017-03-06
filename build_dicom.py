@@ -29,6 +29,7 @@ class NewStudyAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         namespace.studies.append([])
 
+pixel_representations = {'signed': 1, 'unsigned' : 0}
 
 parser = argparse.ArgumentParser(description='Create DICOM data.')
 parser.add_argument('--patient-position', dest='patient_position',
@@ -54,11 +55,11 @@ parser.add_argument('--values', dest='values', default=[], action='append', meta
                     help="""Set the Hounsfield or dose values in a volume to the given value.\n\n\n
                     For syntax, see the forthcoming documentation or the source code...""")
 parser.add_argument('--pixel-representation', dest='pixel_representation', default='signed',
-                    choices=['signed', 'unsigned'],
+                    choices=pixel_representations,
                     help='signed: Stored pixel value type is int16, unsigned: Stored pixel value type is uint16.')
-parser.add_argument('--rescale-slope', dest='rescale_slope', type=float,
+parser.add_argument('--rescale-slope', dest='rescale_slope', type=float, default=1.0,
                     help="""Set the rescale slope (defaults - CT: 1.0, PET: 1.0).""")
-parser.add_argument('--rescale-intercept', dest='rescale_intercept', type=float,
+parser.add_argument('--rescale-intercept', dest='rescale_intercept', type=float, default=-1024.0,
                     help="""Set the rescale intercept (defaults - CT: -1024.0).""")
 parser.add_argument('--center', dest='center', default="[0;0;0]",
                     help="""Center of the image, in dicom patient coordinates.""")
@@ -101,10 +102,6 @@ args = parser.parse_args(namespace=argparse.Namespace(studies=[[]]))
 
 voxel_size = [float(x) for x in args.VoxelSize.split(",")]
 num_voxels = [int(x) for x in args.NumVoxels.split(",")]
-if args.pixel_representation == 'signed':
-    pixel_representation = 1
-else:
-    pixel_representation = 0
 
 if not os.path.exists(args.outdir):
     os.makedirs(args.outdir)
@@ -116,52 +113,32 @@ for study in args.studies:
         if series.modality == "CT":
             if 'PatientPosition' not in sb.current_study:
                 parser.error("Patient position must be specified when writing CT images!")
-            if args.rescale_slope is None:
-                rescale_slope = 1.0
-            else:
-                rescale_slope = args.rescale_slope
-            if args.rescale_intercept is None:
-                rescale_intercept = -1024.0
-            else:
-                rescale_intercept = args.rescale_intercept
 
             ib = sb.build_ct(
                 num_voxels=num_voxels,
                 voxel_size=voxel_size,
-                pixel_representation=pixel_representation,
-                rescale_slope=rescale_slope,
-                rescale_intercept=rescale_intercept,
+                pixel_representation=pixel_representations[series.pixel_representation],
+                rescale_slope=series.rescale_slope,
+                rescale_intercept=series.rescale_intercept,
                 center=np.array(series.center))
         elif series.modality == "MR":
             if 'PatientPosition' not in sb.current_study:
                 parser.error("Patient position must be specified when writing MR images!")
-            if args.rescale_slope is None:
-                rescale_slope = 1.0
-            else:
-                rescale_slope = args.rescale_slope
-            if args.rescale_intercept is None:
-                rescale_intercept = 0.0
-            else:
-                rescale_intercept = args.rescale_intercept
 
             ib = sb.build_mr(
                 num_voxels=num_voxels,
                 voxel_size=voxel_size,
-                pixel_representation=pixel_representation,
+                pixel_representation=pixel_representations[series.pixel_representation],
                 center=np.array(series.center))
         elif series.modality == "PT":
             if 'PatientPosition' not in sb.current_study:
                 parser.error("Patient position must be specified when writing MR images!")
-            if args.rescale_slope is None:
-                rescale_slope = 1.0
-            else:
-                rescale_slope = args.rescale_slope
 
             ib = sb.build_pt(
                 num_voxels=num_voxels,
                 voxel_size=voxel_size,
-                pixel_representation=pixel_representation,
-                rescale_slope=rescale_slope,
+                pixel_representation=pixel_representations[series.pixel_representation],
+                rescale_slope=series.rescale_slope,
                 center=np.array(series.center))
         elif series.modality == "RTDOSE":
             ib = sb.build_dose(
