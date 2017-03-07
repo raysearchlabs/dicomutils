@@ -7,14 +7,18 @@ import coordinates
 if hasattr(dicom, 'config'):
     dicom.config.allow_DS_float = True
 
-def get_uid(name):
-    return [k for k,v in dicom.UID.UID_dictionary.iteritems() if v[0] == name][0]
 
-def generate_uid(_uuid = None):
+def get_uid(name):
+    # print("{" + "\n".join("{}: {}".format(k, v) for k, v in dicom.UID.UID_dictionary.items()) + "}")
+    return [k for k, v in dicom.UID.UID_dictionary.iteritems() if v[0] == name][0]
+
+
+def generate_uid(_uuid=None):
     """Returns a new DICOM UID based on a UUID, as specified in CP1156 (Final)."""
     if _uuid == None:
         _uuid = uuid.uuid1()
     return "2.25.%i" % _uuid.int
+
 
 def get_current_study_uid(prop, current_study):
     if prop not in current_study:
@@ -22,6 +26,7 @@ def get_current_study_uid(prop, current_study):
     return current_study[prop]
 
 ImplementationClassUID = '2.25.229451600072090404564544894284998027172'
+
 
 def get_empty_dataset(filename, storagesopclass, sopinstanceuid):
     file_meta = dicom.dataset.Dataset()
@@ -31,26 +36,81 @@ def get_empty_dataset(filename, storagesopclass, sopinstanceuid):
     ds = dicom.dataset.FileDataset(filename, {}, file_meta=file_meta, preamble="\0"*128)
     return ds
 
-def get_default_ct_dataset(sopinstanceuid, current_study):
+
+def get_default_ct_dataset(sopinstanceuid, current_study, pixel_representation, rescale_slope, rescale_intercept):
     if 'StudyTime' not in current_study:
         current_study['StudyTime'] = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyDate' not in current_study:
         current_study['StudyDate'] = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
-    DT = current_study['StudyDate']
-    TM = current_study['StudyTime']
+    dt = current_study['StudyDate']
+    tm = current_study['StudyTime']
     filename = "CT_%s.dcm" % (sopinstanceuid,)
     ds = get_empty_dataset(filename, "CT Image Storage", sopinstanceuid)
-    get_sop_common_module(ds, DT, TM, "CT Image Storage", sopinstanceuid)
-    get_ct_image_module(ds)
-    get_image_pixel_macro(ds)
+    get_sop_common_module(ds, dt, tm, "CT Image Storage", sopinstanceuid)
+    get_ct_image_module(ds, rescale_slope=rescale_slope, rescale_intercept=rescale_intercept)
+    get_image_pixel_macro(ds, pixel_representation)
     get_patient_module(ds, current_study)
     get_general_study_module(ds, current_study)
-    get_general_series_module(ds, DT, TM, "CT")
+    get_general_series_module(ds, dt, tm, "CT")
     get_frame_of_reference_module(ds)
     get_general_equipment_module(ds)
-    get_general_image_module(ds, DT, TM)
+    get_general_image_module(ds, dt, tm)
     get_image_plane_module(ds)
     return ds
+
+
+def get_default_mr_dataset(sopinstanceuid, current_study, pixel_representation):
+    if 'StudyTime' not in current_study:
+        current_study['StudyTime'] = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    if 'StudyDate' not in current_study:
+        current_study['StudyDate'] = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
+    dt = current_study['StudyDate']
+    tm = current_study['StudyTime']
+    filename = "MR_%s.dcm" % (sopinstanceuid,)
+    ds = get_empty_dataset(filename, "MR Image Storage", sopinstanceuid)
+    get_sop_common_module(ds, dt, tm, "MR Image Storage", sopinstanceuid)
+    get_mr_image_module(ds)
+    get_image_pixel_macro(ds, pixel_representation)
+    get_patient_module(ds, current_study)
+    get_general_study_module(ds, current_study)
+    get_general_series_module(ds, dt, tm, "MR")
+    get_frame_of_reference_module(ds)
+    get_general_equipment_module(ds)
+    get_general_image_module(ds, dt, tm)
+    get_image_plane_module(ds)
+    return ds
+
+
+def get_default_pt_dataset(
+        sopinstanceuid,
+        current_study,
+        image_index,
+        number_of_slices,
+        pixel_representation,
+        rescale_slope):
+    if 'StudyTime' not in current_study:
+        current_study['StudyTime'] = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
+    if 'StudyDate' not in current_study:
+        current_study['StudyDate'] = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
+    dt = current_study['StudyDate']
+    tm = current_study['StudyTime']
+    filename = "PT_%s.dcm" % (sopinstanceuid,)
+    ds = get_empty_dataset(filename, "Positron Emission Tomography Image Storage", sopinstanceuid)
+    get_sop_common_module(ds, dt, tm, "Positron Emission Tomography Image Storage", sopinstanceuid)
+    get_pet_image_module(ds, image_index, rescale_slope=rescale_slope)
+    get_image_pixel_macro(ds, pixel_representation)
+    get_patient_module(ds, current_study)
+    get_general_study_module(ds, current_study)
+    get_general_series_module(ds, dt, tm, "PT")
+    get_pet_series_module(ds, number_of_slices)
+    get_pet_isotope_module(ds)
+    get_nmpet_patient_orientation_module(ds)
+    get_frame_of_reference_module(ds)
+    get_general_equipment_module(ds)
+    get_general_image_module(ds, dt, tm)
+    get_image_plane_module(ds)
+    return ds
+
 
 def get_default_rt_dose_dataset(current_study, rtplan):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
@@ -157,7 +217,7 @@ def get_sop_common_module(ds, DT, TM, modality, sopinstanceuid):
     ds.InstanceCreationDate = DT
     ds.InstanceCreationTime = TM
 
-def get_ct_image_module(ds):
+def get_ct_image_module(ds, rescale_slope=1.0, rescale_intercept=-1024.0):
     # Type 1
     ds.ImageType = "ORIGINAL\SECONDARY\AXIAL"
     ds.SamplesperPixel = 1
@@ -165,17 +225,65 @@ def get_ct_image_module(ds):
     ds.BitsAllocated = 16
     ds.BitsStored = 16
     ds.HighBit = 15
-    ds.RescaleIntercept = -1024.0
-    ds.RescaleSlope = 1.0
+    ds.RescaleIntercept = rescale_intercept
+    ds.RescaleSlope = rescale_slope
     # Type 2
     ds.KVP = ""
     ds.AcquisitionNumber = ""
 
-def get_image_pixel_macro(ds):
+
+def get_mr_image_module(ds):
+    # Type 1
+    ds.ImageType = "ORIGINAL\SECONDARY\OTHER"
+    ds.SamplesperPixel = 1
+    ds.PhotometricInterpretation = "MONOCHROME2"
+    ds.BitsAllocated = 16
+    ds.BitsStored = 16
+    ds.HighBit = 15
+    ds.ScanningSequence = "RM"
+    ds.SequenceVariant = "NONE"
+    ds.ScanOptions = "PER"
+    # Type 2
+    ds.MRAcquisitionType = "2D"
+    ds.EchoTime = 1  # [ms]
+    ds.EchoTrainLength = 1  # ???
+    ds.RepetitionTime = 1  # [ms]
+
+
+def get_pet_image_module(ds, image_index, rescale_slope):
+    """C.8.9.4"""
+    # Type 1
+    ds.ImageType = "ORIGINAL\PRIMARY"
+    ds.SamplesperPixel = 1
+    ds.PhotometricInterpretation = "MONOCHROME2"
+    ds.BitsAllocated = 16
+    ds.BitsStored = 16
+    ds.HighBit = 15
+    ds.RescaleIntercept = 0
+    ds.RescaleSlope = rescale_slope
+    ds.FrameReferenceTime = '1696000'  # (0054, 1300)
+    ds.ImageIndex = image_index  # (0054, 1330)
+
+    # Type 1C
+    ds.DecayFactor = 1.21051  # Decay Factor (0054, 1321)
+    # ds.TriggerTime = 0  # Trigger Time (0018, 1060)
+    # ds.FrameTime = 0  # Frame Time (0018, 1063)
+    # Low R-R Value (0018, 1081)
+    # High R-R Value (0018, 1082)
+    ds.LossyImageCompression = '00'  # Lossy Image Compression (0028, 2110)
+
+    # Type 2
+    ds.AcquisitionDate = '20121212'  # Acquisition Date (0008,0022)
+    ds.AcquisitionTime = '134804'  # Acquisition Time (0008, 0032)
+    ds.ActualFrameDuration = '24000'  # Actual Frame Duration (0018,1242)
+
+
+def get_image_pixel_macro(ds, pixel_representation):
     # Type 1
     ds.Rows = 256
     ds.Columns = 256
-    ds.PixelRepresentation = 0
+    ds.PixelRepresentation = pixel_representation
+
 
 def get_patient_module(ds, current_study):
     # Type 2
@@ -183,6 +291,7 @@ def get_patient_module(ds, current_study):
     ds.PatientID = current_study['PatientID']
     ds.PatientsBirthDate = current_study['PatientsBirthDate']
     ds.PatientsSex = "O"
+
 
 def get_general_study_module(ds, current_study):
     # Type 1
@@ -196,19 +305,50 @@ def get_general_study_module(ds, current_study):
     # Type 3
     #ds.StudyDescription = ""
 
+
 def get_general_series_module(ds, DT, TM, modality):
     # Type 1
     ds.Modality = modality
     ds.SeriesInstanceUID = ""
     # Type 2
     ds.SeriesNumber = ""
-    # Type 2C on Modality in ['CT', 'MR', 'Enhanced CT', 'Enhanced MR Image', 'Enhanced Color MR Image', 'MR Spectroscopy']. May not be present if Patient Orientation Code Sequence is present.
-    #ds.PatientPosition = "HFS"
+    # Type 2C on Modality in
+    # ['CT', 'MR', 'Enhanced CT', 'Enhanced MR Image', 'Enhanced Color MR Image', 'MR Spectroscopy'].
+    # May not be present if Patient Orientation Code Sequence is present.
+    # ds.PatientPosition = "HFS"
+    if modality is 'MR' or modality is 'PT':
+        ds.Laterality = 'R'
 
     # Type 3
     ds.SeriesDate = DT
     ds.SeriesTime = TM
-    #ds.SeriesDescription = ""
+    # ds.SeriesDescription = ""
+
+
+def get_pet_series_module(ds, number_of_slices):
+    # Type 1
+    ds.Units = 'BQML'  # Units (0054, 1001)
+    ds.CountsSource = 'EMISSION'  # Counts Source (0054, 1002)
+    ds.SeriesType = 'STATIC\IMAGE'  # Series Type (0054,1000)
+    ds.NumberOfSlices = number_of_slices  # Number of Slices (0054,0081)
+    ds.DecayCorrection = 'START'
+    # Type 2
+    ds.CorrectedImage = 'DECY\ATTN\SCAT\DTIM\RAN\DCAL\NORM'  # Corrected Image (0028,0051)
+    ds.CollimatorType = 'NONE'  # Collimator Type (0018,1181)
+
+
+def get_pet_isotope_module(ds):
+    # Type 2
+    # ds.RadiopharmaceuticalInformationSequence =  # Radiopharmaceutical Information Sequence (0054,0016)
+    pass
+
+
+def get_nmpet_patient_orientation_module(ds):
+    # Type 2
+    # ds.PatientOrientationCodeSequence = '???'  # (0054,0410)
+    # ds.PatientGantryRelationshipCodeSequence = '???' # (0054,0414)
+    pass
+
 
 def get_rt_series_module(ds, DT, TM, modality):
     # Type 1
@@ -217,12 +357,12 @@ def get_rt_series_module(ds, DT, TM, modality):
     # Type 2
     ds.SeriesNumber = ""
     ds.OperatorsName = ""
-
     # ds.SeriesDescriptionCodeSequence = None
     # ds.ReferencedPerformedProcedureStepSequence = None
     # ds.RequestAttributesSequence = None
     # Performed Procedure Step Summary Macro...
     # ds.SeriesDescription = ""
+
 
 def get_frame_of_reference_module(ds):
     # Type 1
@@ -230,12 +370,14 @@ def get_frame_of_reference_module(ds):
     # Type 2
     ds.PositionReferenceIndicator = ""
 
+
 def get_general_equipment_module(ds):
     # Type 1
     ds.Manufacturer = "pydicom"
     # Type 3
     ds.ManufacturersModelName = "https://github.com/raysearchlabs/dicomutils"
     ds.SoftwareVersions = "PyDICOM %s" % (dicom.__version__,)
+
 
 def get_general_image_module(ds, DT, TM):
     # Type 2
@@ -245,6 +387,7 @@ def get_general_image_module(ds, DT, TM):
     ds.AcquisitionTime = TM
     ds.ImagesinAcquisition = 1
     ds.DerivationDescription = "Generated from numpy"
+
 
 def get_image_plane_module(ds):
     # Type 1
@@ -257,10 +400,12 @@ def get_image_plane_module(ds):
     # Type 3
     # ds.SliceLocation = 0
 
+
 def get_multi_frame_module(ds):
     # Type 1
     ds.NumberofFrames = 1
     ds.FrameIncrementPointer = dicom.datadict.Tag(dicom.datadict.tag_for_name("GridFrameOffsetVector"))
+
 
 def get_rt_dose_module(ds, rtplan=None):
     # Type 1C on PixelData
@@ -311,6 +456,7 @@ def get_rt_dose_module(ds, rtplan=None):
     # ds.DoseComment = "blabla"
     # ds.NormalizationPoint = [0,0,0]
     # ds.TissueHeterogeneityCorrection = "IMAGE" # or "ROI_OVERRIDE" or "WATER"
+
 
 def get_rt_general_plan_module(ds, DT, TM, structure_set=None, dose=None):
     # Type 1
@@ -371,6 +517,7 @@ def add_beam_to_rt_fraction_group(fg, beam, beam_meterset):
     fg.NumberofBeams += 1
     fg.ReferencedBeamSequence.append(refbeam)
 
+
 def cumsum(i):
     """Yields len(i)+1 values from 0 to sum(i)"""
     s = 0.0
@@ -378,6 +525,7 @@ def cumsum(i):
     for x in i:
         s += x
         yield s
+
 
 def get_rt_patient_setup_module(ds, current_study):
     ps = dicom.dataset.Dataset()
@@ -1013,17 +1161,21 @@ def build_rt_structure_set(ref_images, current_study, **kwargs):
     return rs
 
 
-
-def build_ct(ct_data, voxel_size, center, current_study, **kwargs):
+def build_ct(ct_data, pixel_representation, rescale_slope, rescale_intercept, voxel_size, center, current_study, **kwargs):
     nVoxels = ct_data.shape
     ctbaseuid = generate_uid()
     FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    cts=[]
+    cts = []
     for z in range(nVoxels[2]):
         sopinstanceuid = "%s.%i" % (ctbaseuid, z)
-        ct = get_default_ct_dataset(sopinstanceuid, current_study)
+        ct = get_default_ct_dataset(
+            sopinstanceuid,
+            current_study,
+            pixel_representation,
+            rescale_slope=rescale_slope,
+            rescale_intercept=rescale_intercept)
         ct.SeriesInstanceUID = seriesuid
         ct.StudyInstanceUID = studyuid
         ct.FrameofReferenceUID = FoRuid
@@ -1042,3 +1194,76 @@ def build_ct(ct_data, voxel_size, center, current_study, **kwargs):
                 setattr(ct, k, v)
         cts.append(ct)
     return cts
+
+
+def build_mr(mr_data, pixel_representation, voxel_size, center, current_study, **kwargs):
+    voxel_count = mr_data.shape
+    mr_base_uid = generate_uid()
+    for_uid = get_current_study_uid('FrameofReferenceUID', current_study)
+    study_uid = get_current_study_uid('StudyUID', current_study)
+    series_uid = generate_uid()
+    mrs = []
+    for z in range(voxel_count[2]):
+        sop_instance_uid = "%s.%i" % (mr_base_uid, z)
+        mr = get_default_mr_dataset(
+            sop_instance_uid,
+            current_study,
+            pixel_representation)
+        mr.SeriesInstanceUID = series_uid
+        mr.StudyInstanceUID = study_uid
+        mr.FrameofReferenceUID = for_uid
+        mr.Rows = voxel_count[1]
+        mr.Columns = voxel_count[0]
+        mr.PixelSpacing = [voxel_size[1], voxel_size[0]]
+        mr.SliceThickness = voxel_size[2]
+        mr.ImagePositionPatient = [
+            center[0] - (voxel_count[0] - 1) * voxel_size[0] / 2.0,
+            center[1] - (voxel_count[1] - 1) * voxel_size[1] / 2.0,
+            center[2] - (voxel_count[2] - 1) * voxel_size[2] / 2.0 + z * voxel_size[2]
+        ]
+        mr.PixelData = mr_data[:, :, z].tostring(order='F')
+        if 'PatientPosition' in current_study:
+            mr.PatientPosition = current_study['PatientPosition']
+        for k, v in kwargs.iteritems():
+            if v is not None:
+                setattr(mr, k, v)
+        mrs.append(mr)
+    return mrs
+
+
+def build_pt(pt_data, pixel_representation, rescale_slope, voxel_size, center, current_study, **kwargs):
+    voxel_count = pt_data.shape
+    pt_base_uid = generate_uid()
+    for_uid = get_current_study_uid('FrameofReferenceUID', current_study)
+    study_uid = get_current_study_uid('StudyUID', current_study)
+    series_uid = generate_uid()
+    pts = []
+    for z in range(voxel_count[2]):
+        sop_instance_uid = "%s.%i" % (pt_base_uid, z)
+        pt = get_default_pt_dataset(
+            sop_instance_uid,
+            current_study,
+            image_index=z,
+            number_of_slices=voxel_count[2],
+            pixel_representation=pixel_representation,
+            rescale_slope=rescale_slope)
+        pt.SeriesInstanceUID = series_uid
+        pt.StudyInstanceUID = study_uid
+        pt.FrameofReferenceUID = for_uid
+        pt.Rows = voxel_count[1]
+        pt.Columns = voxel_count[0]
+        pt.PixelSpacing = [voxel_size[1], voxel_size[0]]
+        pt.SliceThickness = voxel_size[2]
+        pt.ImagePositionPatient = [
+            center[0] - (voxel_count[0] - 1) * voxel_size[0] / 2.0,
+            center[1] - (voxel_count[1] - 1) * voxel_size[1] / 2.0,
+            center[2] - (voxel_count[2] - 1) * voxel_size[2] / 2.0 + z * voxel_size[2]
+        ]
+        pt.PixelData = pt_data[:, :, z].tostring(order='F')
+        if 'PatientPosition' in current_study:
+            pt.PatientPosition = current_study['PatientPosition']
+        for k, v in kwargs.iteritems():
+            if v is not None:
+                setattr(pt, k, v)
+        pts.append(pt)
+    return pts

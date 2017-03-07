@@ -20,7 +20,14 @@ def build_orientation(patient_position, row_direction, column_direction, frame_o
 
     print "building %s..." % (patient_position,)
     print "ct"
-    ct = sb.build_ct(num_voxels = [7,7,7], voxel_size = [4,4,4], rescale_slope = 1, rescale_intercept = -1024, row_direction = row_direction, column_direction = column_direction)
+    ct = sb.build_ct(
+        num_voxels=[7, 7, 7],
+        voxel_size=[4, 4, 4],
+        pixel_representation=0,
+        rescale_slope=1,
+        rescale_intercept=-1024,
+        row_direction=row_direction,
+        column_direction=column_direction)
     ct.clear(real_value = -1000)
     ct.add_box(size = [4,4,4], center = [0,0,0], real_value = 0)
     ct.add_box(size = [20,4,4], center = [0,-8,-8], real_value = 0)

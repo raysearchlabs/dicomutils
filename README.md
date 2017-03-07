@@ -3,7 +3,7 @@ dicomutils
 
 A set of utilities for working with DICOM files.
 
-The main utility is currently build_dicom, which can generate simple synthetic CT data, 
+The main utility is currently build_dicom, which can generate simple synthetic CT data, MR data, PET data,
 RT Structure sets, RT Doses and RT Plans.
 
 All output files will be placed in the current working directory, and named as `<MODALITY>_<SOPINSTANCEUID>.dcm`, e.g. `CT_2.25.119389864082697057857042902898482259876.84.dcm`.
