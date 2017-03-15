@@ -57,6 +57,8 @@ parser.add_argument('--values', dest='values', default=[], action='append', meta
 parser.add_argument('--pixel-representation', dest='pixel_representation', default='signed',
                     choices=pixel_representations,
                     help='signed: Stored pixel value type is int16, unsigned: Stored pixel value type is uint16.')
+parser.add_argument('--image-orientation', dest='imageorientation', default=[1,0,0,0,1,0],
+                    help="""The Image Orientation (Patient) to be used in the image""")
 parser.add_argument('--rescale-slope', dest='rescale_slope', type=float, default=1.0,
                     help="""Set the rescale slope (defaults - CT: 1.0, PET: 1.0).""")
 parser.add_argument('--rescale-intercept', dest='rescale_intercept', type=float, default=-1024.0,
@@ -110,6 +112,8 @@ for study in args.studies:
     for series in study:
         if series.center.__class__ is str:
             series.center = [float(b) for b in series.center.lstrip('[').rstrip(']').split(";")]
+        if series.imageorientation.__class__ is str:
+            series.imageorientation = [float(b) for b in series.imageorientation.split(",")]
         if series.modality == "CT":
             if 'PatientPosition' not in sb.current_study:
                 parser.error("Patient position must be specified when writing CT images!")
@@ -120,6 +124,8 @@ for study in args.studies:
                 pixel_representation=pixel_representations[series.pixel_representation],
                 rescale_slope=series.rescale_slope,
                 rescale_intercept=series.rescale_intercept,
+                column_direction=series.imageorientation[:3], # reversed column/row, should be fixed in builders and here
+                row_direction=series.imageorientation[3:],
                 center=np.array(series.center))
         elif series.modality == "MR":
             if 'PatientPosition' not in sb.current_study:
@@ -129,6 +135,8 @@ for study in args.studies:
                 num_voxels=num_voxels,
                 voxel_size=voxel_size,
                 pixel_representation=pixel_representations[series.pixel_representation],
+                column_direction=series.imageorientation[:3],
+                row_direction=series.imageorientation[3:],
                 center=np.array(series.center))
         elif series.modality == "PT":
             if 'PatientPosition' not in sb.current_study:
@@ -139,11 +147,15 @@ for study in args.studies:
                 voxel_size=voxel_size,
                 pixel_representation=pixel_representations[series.pixel_representation],
                 rescale_slope=series.rescale_slope,
+                column_direction=series.imageorientation[:3],
+                row_direction=series.imageorientation[3:],
                 center=np.array(series.center))
         elif series.modality == "RTDOSE":
             ib = sb.build_dose(
                 num_voxels=num_voxels,
                 voxel_size=voxel_size,
+                column_direction=series.imageorientation[:3],
+                row_direction=series.imageorientation[3:],
                 center=np.array(series.center))
         elif series.modality == "RTPLAN":
             isocenter = [float(b) for b in series.isocenter.lstrip('[').rstrip(']').split(";")]
