@@ -182,6 +182,15 @@ for study in args.studies:
                     else:
                         center = [0, 0, 0]
                     ib.add_box(size=size, center=center, stored_value=val, mode='set')
+                elif shape == "cylinder":
+                    val = float(value[1])
+                    radius = float(value[2])
+                    hight = float(value[3])
+                    if len(value) > 4:
+                        center = [float(c) for c in value[4].lstrip('[').rstrip(']').split(";")]
+                    else:
+                        center = [0, 0, 0]
+                    ib.add_cylinder(radius=radius, hight=hight, center=center, real_value=val, mode='set')
                 elif shape == "lightfield":
                     for beam in sb.seriesbuilders['RTPLAN'][-1].beam_builders:
                         ib.add_lightfield(beam.rtbeam, beam.meterset)
