@@ -24,7 +24,7 @@ $ ./build_dicom.py \
       --structure external --modality RTSTRUCT
 ```
 
-![Screenshot of 50x50x50 water phantom with outline] (https://github.com/raysearchlabs/dicomutils/wiki/simplebox.png)
+![Screenshot of 50x50x50 water phantom with outline](https://github.com/raysearchlabs/dicomutils/wiki/simplebox.png)
 
 Generate CT data with two cavities (one denser), rois covering them, a box outline, an arbitrary plan 
 and a lightfield "dose":
@@ -45,4 +45,4 @@ $ ./build_dicom.py \
       --values 0 --values lightfield --modality RTDOSE
 ```
 
-![Screenshot of plan with lightfield dose] (https://raw.github.com/wiki/raysearchlabs/dicomutils/lightfieldplan.png)
+![Screenshot of plan with lightfield dose](https://raw.github.com/wiki/raysearchlabs/dicomutils/lightfieldplan.png)
