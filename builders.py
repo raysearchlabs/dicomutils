@@ -450,7 +450,7 @@ class StaticPlanBuilder(object):
 class ROIBuilder(object):
     def __init__(self, structure_set_builder, name, interpreted_type, roi_number, contours=None):
         self.structure_set_builder = structure_set_builder
-        if contours == None:
+        if contours.all() == None:
             self.contours = []
         else:
             self.contours = contours
@@ -537,14 +537,14 @@ class DoseBuilder(ImageBuilder):
         self.num_voxels = num_voxels
         self.voxel_size = voxel_size
         self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
-        if center == None:
+        if center.all() == None:
             center = [0,0,0]
         self.center = np.array(center)
         if column_direction == None or row_direction == None:
             assert column_direction == None and row_direction == None
             column_direction = [1,0,0]
             row_direction = [0,1,0]
-        if slice_direction == None:
+        if slice_direction.all() == None:
             slice_direction = np.cross(column_direction, row_direction)
         slice_direction = slice_direction / np.linalg.norm(slice_direction)
         self.ImageOrientationPatient = column_direction + row_direction

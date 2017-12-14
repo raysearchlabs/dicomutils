@@ -124,7 +124,7 @@ def get_default_rt_dose_dataset(current_study, rtplan):
     ds = get_empty_dataset(filename, "RT Dose Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Dose Storage", sopinstanceuid)
     get_patient_module(ds, current_study)
-    get_image_pixel_macro(ds)
+    get_image_pixel_macro(ds, 0)
     get_general_study_module(ds, current_study)
     get_rt_series_module(ds, DT, TM, "RTDOSE")
     get_frame_of_reference_module(ds)
