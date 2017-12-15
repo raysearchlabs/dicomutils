@@ -43,14 +43,14 @@ class ImageBuilder(object):
 
     def clear(self, real_value = None, stored_value = None):
         if real_value != None:
-            assert stored_value == None
+            assert stored_value is None
             stored_value = self.real_value_to_stored_value(real_value)
         self.pixel_array[:] = stored_value
 
 
     def add_sphere(self, radius, center, stored_value = None, real_value = None, mode = 'set'):
         if real_value != None:
-            assert stored_value == None
+            assert stored_value is None
             stored_value = self.real_value_to_stored_value(real_value)
         x,y,z = self.mgrid()
         voxels = (x-center[0])**2 + (y-center[1])**2 + (z-center[2])**2 <= radius**2
@@ -65,7 +65,7 @@ class ImageBuilder(object):
 
     def add_box(self, size, center, stored_value = None, real_value = None, mode = 'set'):
         if real_value != None:
-            assert stored_value == None
+            assert stored_value is None
             stored_value = (real_value - self.rescale_intercept) / self.rescale_slope
         x,y,z = self.mgrid()
         voxels = (abs(x-center[0]) <= size[0]/2.0) * (abs(y-center[1]) <= size[1]/2.0) * (abs(z-center[2]) <= size[2]/2.0)
@@ -126,7 +126,7 @@ class StudyBuilder(object):
         return b
 
     def build_static_plan(self, nominal_beam_energy=6, isocenter=None, num_leaves=None, mlc_direction=None, leaf_widths=None, structure_set=None, sad=None):
-        if structure_set == None and len(self.seriesbuilders['RTSTRUCT']) == 1:
+        if structure_set is None and len(self.seriesbuilders['RTSTRUCT']) == 1:
             structure_set = self.seriesbuilders['RTSTRUCT'][0]
         b = StaticPlanBuilder(current_study=self.current_study,
                               nominal_beam_energy=nominal_beam_energy, isocenter=isocenter,
@@ -136,26 +136,26 @@ class StudyBuilder(object):
         return b
 
     def build_structure_set(self, images=None):
-        if images == None and len(self.seriesbuilders['CT']) == 1:
+        if images is None and len(self.seriesbuilders['CT']) == 1:
             images = self.seriesbuilders['CT'][0]
         b = StructureSetBuilder(self.current_study, images=images)
         self.seriesbuilders['RTSTRUCT'].append(b)
         return b
 
     def build_dose(self, planbuilder=None, num_voxels=None, voxel_size=None, center=None, dose_grid_scaling=1.0, column_direction=None, row_direction=None, slice_direction=None):
-        if planbuilder == None and len(self.seriesbuilders['RTPLAN']) == 1:
+        if planbuilder is None and len(self.seriesbuilders['RTPLAN']) == 1:
             planbuilder = self.seriesbuilders['RTPLAN'][0]
         if (planbuilder != None
             and planbuilder.structure_set != None
             and planbuilder.structure_set.images != None):
             images = planbuilder.structure_set.images
-            if num_voxels == None and voxel_size == None and center == None:
+            if num_voxels is None and voxel_size is None and center is None:
                 num_voxels = images.num_voxels
                 voxel_size = images.voxel_size
                 center = images.center
-            if column_direction == None and row_direction == None:
+            if column_direction is None and row_direction is None:
                 column_direction, row_direction = images.column_direction, images.row_direction
-            if slice_direction == None:
+            if slice_direction is None:
                 slice_direction = images.slice_direction
 
         b = DoseBuilder(current_study=self.current_study, planbuilder=planbuilder, num_voxels=num_voxels, voxel_size=voxel_size, center=center, dose_grid_scaling=dose_grid_scaling, column_direction=column_direction, row_direction=row_direction, slice_direction=slice_direction)
@@ -211,11 +211,11 @@ class CTBuilder(ImageBuilder):
         else:
             self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
 
-        if column_direction == None or row_direction == None:
-            assert column_direction == None and row_direction == None
+        if column_direction is None or row_direction is None:
+            assert column_direction is None and row_direction is None
             column_direction = [1,0,0]
             row_direction = [0,1,0]
-        if slice_direction == None:
+        if slice_direction is None:
             slice_direction = np.cross(column_direction, row_direction)
         slice_direction = slice_direction / np.linalg.norm(slice_direction)
         self.ImageOrientationPatient = column_direction + row_direction
@@ -369,9 +369,9 @@ from coordinates import TableTop, TableTopEcc
 class StaticBeamBuilder(object):
     def __init__(self, current_study, gantry_angle, meterset, nominal_beam_energy,
                  collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None, sad=None):
-        if table_top == None:
+        if table_top is None:
             table_top = TableTop()
-        if table_top_eccentric == None:
+        if table_top_eccentric is None:
             table_top_eccentric = TableTopEcc()
         self.gantry_angle = gantry_angle
         self.sad = sad
@@ -397,7 +397,7 @@ class StaticBeamBuilder(object):
 
     def conform_jaws_to_mlc(self):
         self.conform_calls.append(lambda beam: modules.conform_jaws_to_mlc(beam))
-    
+
     def finalize_mlc(self):
         modules.finalize_mlc(self.rtbeam)
 
@@ -408,7 +408,7 @@ class StaticBeamBuilder(object):
         self.rtbeam = modules.add_static_rt_beam(ds = rtplan, nleaves = planbuilder.num_leaves, mlcdir = planbuilder.mlc_direction, leafwidths = planbuilder.leaf_widths, gantry_angle = self.gantry_angle, collimator_angle = self.collimator_angle, patient_support_angle = self.patient_support_angle, table_top = self.table_top, table_top_eccentric = self.table_top_eccentric, isocenter = planbuilder.isocenter, nominal_beam_energy = self.nominal_beam_energy, current_study = self.current_study, sad=self.sad)
         for call in self.conform_calls:
             call(self.rtbeam)
-        if self.jaws == None:
+        if self.jaws is None:
             modules.conform_jaws_to_mlc(self.rtbeam)
         if finalize_mlc:
             self.finalize_mlc()
@@ -428,7 +428,7 @@ class StaticPlanBuilder(object):
         self.built = False
 
     def build_beam(self, gantry_angle, meterset, collimator_angle=0, patient_support_angle=0, table_top=None, table_top_eccentric=None, sad=None):
-        if sad == None:
+        if sad is None:
             sad = self.sad
         sbb = StaticBeamBuilder(current_study = self.current_study, meterset = meterset, nominal_beam_energy = self.nominal_beam_energy, gantry_angle = gantry_angle, collimator_angle = collimator_angle, patient_support_angle = patient_support_angle, table_top = table_top, table_top_eccentric = table_top_eccentric, sad = sad)
         self.beam_builders.append(sbb)
@@ -450,7 +450,7 @@ class StaticPlanBuilder(object):
 class ROIBuilder(object):
     def __init__(self, structure_set_builder, name, interpreted_type, roi_number, contours=None):
         self.structure_set_builder = structure_set_builder
-        if contours.all() == None:
+        if contours is None:
             self.contours = []
         else:
             self.contours = contours
@@ -507,7 +507,7 @@ class StructureSetBuilder(object):
 
 
     def add_contours(self, contours, name, interpreted_type, roi_number = None):
-        if roi_number == None:
+        if roi_number is None:
             roi_number = 1
             for rb in self.roi_builders:
                 roi_number = max(roi_number, rb.roi_number + 1)
@@ -537,14 +537,14 @@ class DoseBuilder(ImageBuilder):
         self.num_voxels = num_voxels
         self.voxel_size = voxel_size
         self.pixel_array = np.zeros(self.num_voxels, dtype=np.int16)
-        if center.all() == None:
+        if center is None:
             center = [0,0,0]
         self.center = np.array(center)
-        if column_direction == None or row_direction == None:
-            assert column_direction == None and row_direction == None
+        if column_direction is None or row_direction is None:
+            assert column_direction is None and row_direction is None
             column_direction = [1,0,0]
             row_direction = [0,1,0]
-        if slice_direction.all() == None:
+        if slice_direction is None:
             slice_direction = np.cross(column_direction, row_direction)
         slice_direction = slice_direction / np.linalg.norm(slice_direction)
         self.ImageOrientationPatient = column_direction + row_direction
@@ -561,7 +561,7 @@ class DoseBuilder(ImageBuilder):
         bld = modules.getblds(beam.BeamLimitingDeviceSequence)
         mlcdir, jawdir1, jawdir2 = modules.get_mlc_and_jaw_directions(bld)
         mlcidx = (0,1) if mlcdir == "MLCX" else (1,0)
-        
+
         def add_lightfield_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                   patient_support_angle, patient_position,
                                   table_top, table_top_ecc, sad, isocenter, bldp):
@@ -585,7 +585,7 @@ class DoseBuilder(ImageBuilder):
                     (c2[mlcidx[1],:] <  float(bld[mlcdir].LeafPositionBoundaries[i+1]))
                 ] += 1
         do_for_all_cps(beam, self.current_study['PatientPosition'], add_lightfield_for_cp)
-       
+
     def build(self):
         if self.built:
             return self.datasets
@@ -594,7 +594,7 @@ class DoseBuilder(ImageBuilder):
         x,y,z = self.mgrid()
         rd.ImagePositionPatient = [x[0,0,0],y[0,0,0],z[0,0,0]]
         rd.ImageOrientationPatient = self.ImageOrientationPatient
-                                   
+
         self.built = True
         self.datasets = [rd]
         return self.datasets
