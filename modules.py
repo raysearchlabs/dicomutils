@@ -1,8 +1,12 @@
-import dicom, uuid, datetime
+import uuid, datetime
+import pydicom as dicom
 dicom.config.use_DS_decimal = False
 dicom.config.allow_DS_float = True
 import numpy as np
 import coordinates
+
+from pydicom._uid_dict import UID_dictionary
+
 # Be careful to pass good fp numbers...
 if hasattr(dicom, 'config'):
     dicom.config.allow_DS_float = True
@@ -10,12 +14,12 @@ if hasattr(dicom, 'config'):
 
 def get_uid(name):
     # print("{" + "\n".join("{}: {}".format(k, v) for k, v in dicom.UID.UID_dictionary.items()) + "}")
-    return [k for k, v in dicom.UID.UID_dictionary.iteritems() if v[0] == name][0]
+    return [k for k, v in UID_dictionary.iteritems() if v[0] == name][0]
 
 
 def generate_uid(_uuid=None):
     """Returns a new DICOM UID based on a UUID, as specified in CP1156 (Final)."""
-    if _uuid == None:
+    if _uuid is None:
         _uuid = uuid.uuid1()
     return "2.25.%i" % _uuid.int
 
@@ -33,6 +37,7 @@ def get_empty_dataset(filename, storagesopclass, sopinstanceuid):
     file_meta.MediaStorageSOPClassUID = get_uid(storagesopclass)
     file_meta.MediaStorageSOPInstanceUID = sopinstanceuid
     file_meta.ImplementationClassUID = ImplementationClassUID
+    file_meta.TransferSyntaxUID = dicom.uid.ImplicitVRLittleEndian
     ds = dicom.dataset.FileDataset(filename, {}, file_meta=file_meta, preamble="\0"*128)
     return ds
 
@@ -124,7 +129,8 @@ def get_default_rt_dose_dataset(current_study, rtplan):
     ds = get_empty_dataset(filename, "RT Dose Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Dose Storage", sopinstanceuid)
     get_patient_module(ds, current_study)
-    get_image_pixel_macro(ds)
+    pixel_representation = 0
+    get_image_pixel_macro(ds, pixel_representation)
     get_general_study_module(ds, current_study)
     get_rt_series_module(ds, DT, TM, "RTDOSE")
     get_frame_of_reference_module(ds)
@@ -461,7 +467,7 @@ def get_rt_dose_module(ds, rtplan=None):
 def get_rt_general_plan_module(ds, DT, TM, structure_set=None, dose=None):
     # Type 1
     ds.RTPlanLabel = "Plan"
-    if structure_set == None:
+    if structure_set is None:
         ds.RTPlanGeometry = "TREATMENT_DEVICE"
     else:
         ds.RTPlanGeometry = "PATIENT"
@@ -627,14 +633,14 @@ def do_for_all_cps(beam, patient_position, func, *args, **kwargs):
 def nmin(it):
     n = None
     for i in it:
-        if n == None or i < n:
+        if n is None or i < n:
             n = i
     return n
 
 def nmax(it):
     n = None
     for i in it:
-        if n == None or i > n:
+        if n is None or i > n:
             n = i
     return n
 
@@ -709,10 +715,10 @@ def conform_jaws_to_rectangle(beam, x, y, center):
 
 def finalize_mlc(beam):
     # Just close the leaves at 0. TODO: be more clever
-    for cp in beam.CPs:
-        if not hasattr(cp, 'BLDPositions'):
+    for cp in beam.ControlPointSequence:
+        if not hasattr(cp, 'BeamLimitingDevicePositionSequence'):
             continue
-        mlcs = [bld for bld in cp.BLDPositions if bld.RTBLDType == "MLCX" or bld.RTBLDType == "MLCY"]
+        mlcs = [bld for bld in cp.BeamLimitingDevicePositionSequence if bld.RTBeamLimitingDeviceType == "MLCX" or bld.RTBeamLimitingDeviceType == "MLCY"]
         if len(mlcs) != 1:
             continue
         mlc = mlcs[0]
@@ -936,7 +942,7 @@ def add_static_rt_beam(ds, nleaves, mlcdir, leafwidths, gantry_angle, collimator
     # beam.DeviceSerialNumber # T3
     beam.PrimaryDosimeterUnit = "MU" # T3
     # beam.ReferencedToleranceTableNumber # T3
-    if sad == None:
+    if sad is None:
         beam.SourceAxisDistance = 1000 # mm, T3
     else:
         beam.SourceAxisDistance = sad # mm, T3
