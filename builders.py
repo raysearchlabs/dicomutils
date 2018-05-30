@@ -80,12 +80,12 @@ class ImageBuilder(object):
             assert 'unknown mode'
 
 class StudyBuilder(object):
-    def __init__(self, patient_position="HFS", patient_id="", patients_name="", patients_birthdate=""):
+    def __init__(self, patient_position="HFS", patient_id="", patient_name="", patient_birthdate=""):
         self.modalityorder = ["CT", "MR", "PT", "RTSTRUCT", "RTPLAN", "RTDOSE"]
         self.current_study = {}
         self.current_study['PatientID'] = patient_id
-        self.current_study['PatientsName'] = patients_name
-        self.current_study['PatientsBirthDate'] = patients_birthdate
+        self.current_study['PatientName'] = patient_name
+        self.current_study['PatientBirthDate'] = patient_birthdate
         self.current_study['PatientPosition'] = patient_position
         self.seriesbuilders = defaultdict(lambda: [])
         self.built = False

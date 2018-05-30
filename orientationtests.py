@@ -14,9 +14,9 @@ if not os.path.exists("orientationtests"):
     os.mkdir("orientationtests")
 
 def build_orientation(patient_position, row_direction, column_direction, frame_of_reference_uid = None):
-    sb = StudyBuilder(patient_position=patient_position, patient_id="OrientationTests", patients_name="Orientation^Tests", patients_birthdate = "20121212")
+    sb = StudyBuilder(patient_position=patient_position, patient_id="OrientationTests", patient_name="Orientation^Tests", patient_birthdate = "20121212")
     if frame_of_reference_uid != None:
-        sb.current_study['FrameofReferenceUID'] = frame_of_reference_uid
+        sb.current_study['FrameOfReferenceUID'] = frame_of_reference_uid
 
     print "building %s..." % (patient_position,)
     print "ct"
@@ -65,11 +65,10 @@ patientpositions = ['HFS','HFP','FFS','FFP','HFDR', 'HFDL', 'FFDR', 'FFDL']
 sbs = []
 FoR = None
 for o in orientations:
-	for p in patientpositions:
-	        sb = build_orientation(p, o[0], o[1], FoR)
-		sbs.append(sb)
-                FoR = sbs[0].current_study['FrameofReferenceUID']
-    		d = "orientationtests/" + p + "/" + "%s%s%s%s%s%s" % tuple(x for y in o for x in y)
-		os.makedirs(d)
-		sb.write(d)
-
+    for p in patientpositions:
+        sb = build_orientation(p, o[0], o[1], FoR)
+        sbs.append(sb)
+        FoR = sbs[0].current_study['FrameOfReferenceUID']
+        d = "orientationtests/" + p + "/" + "%s%s%s%s%s%s" % tuple(x for y in o for x in y)
+        os.makedirs(d)
+        sb.write(d)
