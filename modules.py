@@ -117,7 +117,7 @@ def get_default_pt_dataset(
     return ds
 
 
-def get_default_rt_dose_dataset(current_study, rtplan):
+def get_default_rt_dose_dataset(current_study, rtplan, dose_summation_type, beam_number):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyTime' not in current_study:
@@ -138,7 +138,7 @@ def get_default_rt_dose_dataset(current_study, rtplan):
     get_general_image_module(ds, DT, TM)
     get_image_plane_module(ds)
     get_multi_frame_module(ds)
-    get_rt_dose_module(ds, rtplan)
+    get_rt_dose_module(ds, rtplan, dose_summation_type, beam_number)
     return ds
 
 def get_default_rt_structure_set_dataset(ref_images, current_study):
@@ -413,7 +413,7 @@ def get_multi_frame_module(ds):
     ds.FrameIncrementPointer = dicom.datadict.Tag(dicom.datadict.tag_for_name("GridFrameOffsetVector"))
 
 
-def get_rt_dose_module(ds, rtplan=None):
+def get_rt_dose_module(ds, rtplan=None, doseSummationType="PLAN", beam_number=None):
     # Type 1C on PixelData
     ds.SamplesPerPixel = 1
     ds.DoseGridScaling = 1.0
@@ -427,7 +427,7 @@ def get_rt_dose_module(ds, rtplan=None):
     # Type 1
     ds.DoseUnits = "GY"
     ds.DoseType = "PHYSICAL"
-    ds.DoseSummationType = "PLAN"
+    ds.DoseSummationType = doseSummationType
 
     # Type 1C if Dose Summation Type is any of the enumerated values.
     ds.ReferencedRTPlanSequence = []
@@ -449,8 +449,13 @@ def get_rt_dose_module(ds, rtplan=None):
         # Type 1
         ds.ReferencedRTPlanSequence[0].ReferencedFractionGroupSequence[0].ReferencedFractionGroupNumber = 0
         # Type 1C
-        if (ds.DoseSummationType == "BEAM" or
-            ds.DoseSummationType == "CONTROL_POINT"):
+        if (ds.DoseSummationType == "BEAM"):
+            referencedBeamSequence = dicom.dataset.Dataset()
+            referencedBeamSequence.ReferencedBeamNumber = beam_number
+            referencedBeamSequence.ReferencedFractionGroupNumber = 1
+            ds.ReferencedRTPlanSequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence = [referencedBeamSequence];
+
+        if (ds.DoseSummationType == "CONTROL_POINT"):
             ds.ReferencedRTPlanSequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence = [dicom.dataset.Dataset()]
             # ... and on it goes...
             raise NotImplementedError
@@ -1128,12 +1133,12 @@ def build_rt_plan(current_study, isocenter, structure_set=None, **kwargs):
             setattr(rp, k, v)
     return rp
 
-def build_rt_dose(dose_data, voxel_size, center, current_study, rtplan, dose_grid_scaling, **kwargs):
+def build_rt_dose(dose_data, voxel_size, center, current_study, rtplan, dose_grid_scaling, dose_summation_type, beam_number, **kwargs):
     nVoxels = dose_data.shape
     FoRuid = get_current_study_uid('FrameOfReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    rd = get_default_rt_dose_dataset(current_study, rtplan)
+    rd = get_default_rt_dose_dataset(current_study, rtplan, dose_summation_type, beam_number)
     rd.SeriesInstanceUID = seriesuid
     rd.StudyInstanceUID = studyuid
     rd.FrameOfReferenceUID = FoRuid

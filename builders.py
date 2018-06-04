@@ -591,7 +591,7 @@ class DoseBuilder(ImageBuilder):
         if self.built:
             return self.datasets
         rd = modules.build_rt_dose(self.pixel_array, self.voxel_size, self.center, self.current_study,
-                                   self.planbuilder.build()[0], self.dose_grid_scaling)
+                                   self.planbuilder.build()[0], self.dose_grid_scaling, self.dose_summation_type, self.beam_number)
         x,y,z = self.mgrid()
         rd.ImagePositionPatient = [x[0,0,0],y[0,0,0],z[0,0,0]]
         rd.ImageOrientationPatient = self.ImageOrientationPatient
