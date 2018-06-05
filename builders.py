@@ -398,7 +398,7 @@ class StaticBeamBuilder(object):
 
     def conform_jaws_to_mlc(self):
         self.conform_calls.append(lambda beam: modules.conform_jaws_to_mlc(beam))
-    
+
     def finalize_mlc(self):
         modules.finalize_mlc(self.rtbeam)
 
@@ -562,7 +562,7 @@ class DoseBuilder(ImageBuilder):
         bld = modules.getblds(beam.BeamLimitingDeviceSequence)
         mlcdir, jawdir1, jawdir2 = modules.get_mlc_and_jaw_directions(bld)
         mlcidx = (0,1) if mlcdir == "MLCX" else (1,0)
-        
+
         def add_lightfield_for_cp(cp, gantry_angle, gantry_pitch_angle, beam_limiting_device_angle,
                                   patient_support_angle, patient_position,
                                   table_top, table_top_ecc, sad, isocenter, bldp):
@@ -586,7 +586,7 @@ class DoseBuilder(ImageBuilder):
                     (c2[mlcidx[1],:] <  float(bld[mlcdir].LeafPositionBoundaries[i+1]))
                 ] += 1
         do_for_all_cps(beam, self.current_study['PatientPosition'], add_lightfield_for_cp)
-       
+
     def build(self):
         if self.built:
             return self.datasets
@@ -595,7 +595,7 @@ class DoseBuilder(ImageBuilder):
         x,y,z = self.mgrid()
         rd.ImagePositionPatient = [x[0,0,0],y[0,0,0],z[0,0,0]]
         rd.ImageOrientationPatient = self.ImageOrientationPatient
-                                   
+
         self.built = True
         self.datasets = [rd]
         return self.datasets

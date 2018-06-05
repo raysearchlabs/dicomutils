@@ -579,7 +579,7 @@ def get_dicom_to_bld_coordinate_transform(gantryAngle, gantryPitchAngle, beamLim
     isocenter_p1 = np.linalg.inv(coordinates.Mpd()) * np.array([float(isocenter_d[0]), float(isocenter_d[1]), float(isocenter_d[2]), 1.0]).reshape((4,1))
     # Compute the patient coordinate system translation
     Px,Py,Pz,_ = isocenter_p0 - isocenter_p1
-    
+
     M = (coordinates.Mgb(SAD, beamLimitingDeviceAngle)
          * coordinates.Mfg(gantryPitchAngle, gantryAngle)
          * np.linalg.inv(coordinates.Mfs(patientSupportAngle))
@@ -613,7 +613,7 @@ def do_for_all_cps(beam, patient_position, func, *args, **kwargs):
         sad = beam.SourceAxisDistance
     else:
         sad = 1000
-        
+
     for cp in beam.ControlPointSequence:
         gantry_angle = getattr(cp, 'GantryAngle', gantry_angle)
         gantry_pitch_angle = getattr(cp, 'GantryPitchAngle', gantry_pitch_angle)
@@ -747,7 +747,7 @@ def conform_mlc_to_roi(beam, roi, current_study):
             nvertices = len(contour.ContourData)/3
             vertices = np.array(contour.ContourData).reshape((3,1,1,nvertices), order='F')
             vertices = np.vstack((vertices, np.ones((1,1,1,nvertices))))
-            
+
             lp = beam_limiting_device_positions[mlcdir].LeafJawPositions
 
             c = Mdb * vertices
@@ -757,8 +757,8 @@ def conform_mlc_to_roi(beam, roi, current_study):
             for v1,v2 in zip(vs[:-1], vs[1:]):
                 open_mlc_for_line_segment(bld[mlcdir].LeafPositionBoundaries, lp, v1, v2)
             open_mlc_for_line_segment(bld[mlcdir].LeafPositionBoundaries, lp, vs[-1], vs[0])
-    
-    
+
+
     do_for_all_cps(beam, current_study['PatientPosition'], conform_mlc_to_roi_for_cp, roi)
 
 def get_contours_in_bld(beam, roi, current_study):
@@ -772,13 +772,13 @@ def get_contours_in_bld(beam, roi, current_study):
             nvertices = len(contour.ContourData)/3
             vertices = np.array(contour.ContourData).reshape((3,1,1,nvertices), order='F')
             vertices = np.vstack((vertices, np.ones((1,1,1,nvertices))))
-            
+
             c = Mdb * vertices
             # Negation here since everything is at z < 0 in the b system, and that rotates by 180 degrees
             c2 = -np.array([float(beam.SourceAxisDistance)*c[0,:]/c[2,:], float(beam.SourceAxisDistance)*c[1,:]/c[2,:]]).squeeze()
             contours[cp.ControlPointIndex].append(c2)
-    
-    
+
+
     contours = defaultdict(lambda: [])
     do_for_all_cps(beam, current_study['PatientPosition'], conform_mlc_to_roi_for_cp, roi, contours)
     return contours
