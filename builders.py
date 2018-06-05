@@ -1,7 +1,8 @@
 import numpy as np
 import modules
 from collections import defaultdict
-import dicom, os
+import os
+import pydicom as dicom
 dicom.config.use_DS_decimal = False
 dicom.config.allow_DS_float = True
 
@@ -79,12 +80,12 @@ class ImageBuilder(object):
             assert 'unknown mode'
 
 class StudyBuilder(object):
-    def __init__(self, patient_position="HFS", patient_id="", patients_name="", patients_birthdate=""):
+    def __init__(self, patient_position="HFS", patient_id="", patient_name="", patient_birthdate=""):
         self.modalityorder = ["CT", "MR", "PT", "RTSTRUCT", "RTPLAN", "RTDOSE"]
         self.current_study = {}
         self.current_study['PatientID'] = patient_id
-        self.current_study['PatientsName'] = patients_name
-        self.current_study['PatientsBirthDate'] = patients_birthdate
+        self.current_study['PatientName'] = patient_name
+        self.current_study['PatientBirthDate'] = patient_birthdate
         self.current_study['PatientPosition'] = patient_position
         self.seriesbuilders = defaultdict(lambda: [])
         self.built = False
@@ -590,7 +591,7 @@ class DoseBuilder(ImageBuilder):
         if self.built:
             return self.datasets
         rd = modules.build_rt_dose(self.pixel_array, self.voxel_size, self.center, self.current_study,
-                                   self.planbuilder.build()[0], self.dose_grid_scaling)
+                                   self.planbuilder.build()[0], self.dose_grid_scaling, self.dose_summation_type, self.beam_number)
         x,y,z = self.mgrid()
         rd.ImagePositionPatient = [x[0,0,0],y[0,0,0],z[0,0,0]]
         rd.ImageOrientationPatient = self.ImageOrientationPatient
