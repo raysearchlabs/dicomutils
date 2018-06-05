@@ -242,7 +242,7 @@ class Root(HasTraits):
             patient = self.get_patient_with_id(self._loaded_files[filename].PatientID)
             if patient == None:
                 self.patientlist.patients.append(Patient(dicom_datasets = [self._loaded_files[filename]],
-                                                         name = self._loaded_files[filename].PatientsName,
+                                                         name = self._loaded_files[filename].PatientName,
                                                          patient_id = self._loaded_files[filename].PatientID))
             else:
                 patient.dicom_datasets.append(self._loaded_files[filename])

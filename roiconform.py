@@ -10,7 +10,7 @@ tmpdir = os.path.join(os.getenv("TEMP"), "studybuilder")
 if not os.path.exists(tmpdir):
     os.mkdir(tmpdir)
 
-sb = StudyBuilder(patient_position="HFS", patient_id="123", patients_name="Kalle^Kula", patients_birthdate = "20121212")
+sb = StudyBuilder(patient_position="HFS", patient_id="123", patient_name="Kalle^Kula", patient_birthdate = "20121212")
 ct = sb.build_ct(
     num_voxels=[48, 64, 75],
     voxel_size=[4, 3, 4],

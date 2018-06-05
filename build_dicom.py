@@ -38,9 +38,9 @@ parser.add_argument('--patient-position', dest='patient_position',
                          '(default: not specified)')
 parser.add_argument('--patient-id', dest='patient_id', default='Patient ID',
                     help='The patient ID.')
-parser.add_argument('--patients-name', dest='patients_name', default='LastName^GivenName^^^',
+parser.add_argument('--patients-name', dest='patient_name', default='LastName^GivenName^^^',
                     help="The patient's name, in DICOM caret notation.")
-parser.add_argument('--patients-birthdate', dest='patients_birthdate', default='',
+parser.add_argument('--patients-birthdate', dest='patient_birthdate', default='',
                     help="The patient's birthdate, in DICOM DA notation (YYYYMMDD).")
 parser.add_argument('--voxelsize', dest='VoxelSize', default="1,2,4",
                     help='The size of a single voxel in mm. (default: 1,2,4)')
@@ -189,10 +189,10 @@ for study in args.studies:
             sb.current_study['PatientPosition'] = series.patient_position
         if series.patient_id != None:
             sb.current_study['PatientID'] = series.patient_id
-        if series.patients_name != None:
-            sb.current_study['PatientsName'] = series.patients_name
-        if series.patients_birthdate != None:
-            sb.current_study['PatientsBirthDate'] = series.patients_birthdate
+        if series.patient_name != None:
+            sb.current_study['PatientName'] = series.patient_name
+        if series.patient_birthdate != None:
+            sb.current_study['PatientBirthDate'] = series.patient_birthdate
         if series.modality == "CT":
             ib.build()
         elif series.modality == "MR":

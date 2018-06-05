@@ -1,8 +1,12 @@
-import dicom, uuid, datetime
+import uuid, datetime
+import pydicom as dicom
 dicom.config.use_DS_decimal = False
 dicom.config.allow_DS_float = True
 import numpy as np
 import coordinates
+
+from pydicom._uid_dict import UID_dictionary
+
 # Be careful to pass good fp numbers...
 if hasattr(dicom, 'config'):
     dicom.config.allow_DS_float = True
@@ -10,12 +14,12 @@ if hasattr(dicom, 'config'):
 
 def get_uid(name):
     # print("{" + "\n".join("{}: {}".format(k, v) for k, v in dicom.UID.UID_dictionary.items()) + "}")
-    return [k for k, v in dicom.UID.UID_dictionary.iteritems() if v[0] == name][0]
+    return [k for k, v in UID_dictionary.iteritems() if v[0] == name][0]
 
 
 def generate_uid(_uuid=None):
     """Returns a new DICOM UID based on a UUID, as specified in CP1156 (Final)."""
-    if _uuid == None:
+    if _uuid is None:
         _uuid = uuid.uuid1()
     return "2.25.%i" % _uuid.int
 
@@ -33,6 +37,7 @@ def get_empty_dataset(filename, storagesopclass, sopinstanceuid):
     file_meta.MediaStorageSOPClassUID = get_uid(storagesopclass)
     file_meta.MediaStorageSOPInstanceUID = sopinstanceuid
     file_meta.ImplementationClassUID = ImplementationClassUID
+    file_meta.TransferSyntaxUID = dicom.uid.ImplicitVRLittleEndian
     ds = dicom.dataset.FileDataset(filename, {}, file_meta=file_meta, preamble="\0"*128)
     return ds
 
@@ -112,7 +117,7 @@ def get_default_pt_dataset(
     return ds
 
 
-def get_default_rt_dose_dataset(current_study, rtplan):
+def get_default_rt_dose_dataset(current_study, rtplan, dose_summation_type, beam_number):
     DT = "%04i%02i%02i" % datetime.datetime.now().timetuple()[:3]
     TM = "%02i%02i%02i" % datetime.datetime.now().timetuple()[3:6]
     if 'StudyTime' not in current_study:
@@ -124,7 +129,8 @@ def get_default_rt_dose_dataset(current_study, rtplan):
     ds = get_empty_dataset(filename, "RT Dose Storage", sopinstanceuid)
     get_sop_common_module(ds, DT, TM, "RT Dose Storage", sopinstanceuid)
     get_patient_module(ds, current_study)
-    get_image_pixel_macro(ds)
+    pixel_representation = 0
+    get_image_pixel_macro(ds, pixel_representation)
     get_general_study_module(ds, current_study)
     get_rt_series_module(ds, DT, TM, "RTDOSE")
     get_frame_of_reference_module(ds)
@@ -132,7 +138,7 @@ def get_default_rt_dose_dataset(current_study, rtplan):
     get_general_image_module(ds, DT, TM)
     get_image_plane_module(ds)
     get_multi_frame_module(ds)
-    get_rt_dose_module(ds, rtplan)
+    get_rt_dose_module(ds, rtplan, dose_summation_type, beam_number)
     return ds
 
 def get_default_rt_structure_set_dataset(ref_images, current_study):
@@ -220,7 +226,7 @@ def get_sop_common_module(ds, DT, TM, modality, sopinstanceuid):
 def get_ct_image_module(ds, rescale_slope=1.0, rescale_intercept=-1024.0):
     # Type 1
     ds.ImageType = "ORIGINAL\SECONDARY\AXIAL"
-    ds.SamplesperPixel = 1
+    ds.SamplesPerPixel = 1
     ds.PhotometricInterpretation = "MONOCHROME2"
     ds.BitsAllocated = 16
     ds.BitsStored = 16
@@ -235,7 +241,7 @@ def get_ct_image_module(ds, rescale_slope=1.0, rescale_intercept=-1024.0):
 def get_mr_image_module(ds):
     # Type 1
     ds.ImageType = "ORIGINAL\SECONDARY\OTHER"
-    ds.SamplesperPixel = 1
+    ds.SamplesPerPixel = 1
     ds.PhotometricInterpretation = "MONOCHROME2"
     ds.BitsAllocated = 16
     ds.BitsStored = 16
@@ -254,7 +260,7 @@ def get_pet_image_module(ds, image_index, rescale_slope):
     """C.8.9.4"""
     # Type 1
     ds.ImageType = "ORIGINAL\PRIMARY"
-    ds.SamplesperPixel = 1
+    ds.SamplesPerPixel = 1
     ds.PhotometricInterpretation = "MONOCHROME2"
     ds.BitsAllocated = 16
     ds.BitsStored = 16
@@ -287,10 +293,10 @@ def get_image_pixel_macro(ds, pixel_representation):
 
 def get_patient_module(ds, current_study):
     # Type 2
-    ds.PatientsName = current_study['PatientsName']
+    ds.PatientName = current_study['PatientName']
     ds.PatientID = current_study['PatientID']
-    ds.PatientsBirthDate = current_study['PatientsBirthDate']
-    ds.PatientsSex = "O"
+    ds.PatientBirthDate = current_study['PatientBirthDate']
+    ds.PatientSex = "O"
 
 
 def get_general_study_module(ds, current_study):
@@ -299,7 +305,7 @@ def get_general_study_module(ds, current_study):
     # Type 2
     ds.StudyDate = current_study['StudyDate']
     ds.StudyTime = current_study['StudyTime']
-    ds.ReferringPhysiciansName = ""
+    ds.ReferringPhysicianName = ""
     ds.StudyID = ""
     ds.AccessionNumber = ""
     # Type 3
@@ -366,7 +372,7 @@ def get_rt_series_module(ds, DT, TM, modality):
 
 def get_frame_of_reference_module(ds):
     # Type 1
-    ds.FrameofReferenceUID = ""
+    ds.FrameOfReferenceUID = ""
     # Type 2
     ds.PositionReferenceIndicator = ""
 
@@ -375,7 +381,7 @@ def get_general_equipment_module(ds):
     # Type 1
     ds.Manufacturer = "pydicom"
     # Type 3
-    ds.ManufacturersModelName = "https://github.com/raysearchlabs/dicomutils"
+    ds.ManufacturerModelName = "https://github.com/raysearchlabs/dicomutils"
     ds.SoftwareVersions = "PyDICOM %s" % (dicom.__version__,)
 
 
@@ -385,7 +391,7 @@ def get_general_image_module(ds, DT, TM):
     # Type 3
     ds.AcquisitionDate = DT
     ds.AcquisitionTime = TM
-    ds.ImagesinAcquisition = 1
+    ds.ImagesInAcquisition = 1
     ds.DerivationDescription = "Generated from numpy"
 
 
@@ -403,15 +409,15 @@ def get_image_plane_module(ds):
 
 def get_multi_frame_module(ds):
     # Type 1
-    ds.NumberofFrames = 1
+    ds.NumberOfFrames = 1
     ds.FrameIncrementPointer = dicom.datadict.Tag(dicom.datadict.tag_for_name("GridFrameOffsetVector"))
 
 
-def get_rt_dose_module(ds, rtplan=None):
+def get_rt_dose_module(ds, rtplan=None, doseSummationType="PLAN", beam_number=None):
     # Type 1C on PixelData
-    ds.SamplesperPixel = 1
+    ds.SamplesPerPixel = 1
     ds.DoseGridScaling = 1.0
-    ds.SamplesperPixel = 1
+    ds.SamplesPerPixel = 1
     ds.PhotometricInterpretation = "MONOCHROME2"
     ds.BitsAllocated = 16
     ds.BitsStored = 16
@@ -421,7 +427,7 @@ def get_rt_dose_module(ds, rtplan=None):
     # Type 1
     ds.DoseUnits = "GY"
     ds.DoseType = "PHYSICAL"
-    ds.DoseSummationType = "PLAN"
+    ds.DoseSummationType = doseSummationType
 
     # Type 1C if Dose Summation Type is any of the enumerated values.
     ds.ReferencedRTPlanSequence = []
@@ -443,8 +449,13 @@ def get_rt_dose_module(ds, rtplan=None):
         # Type 1
         ds.ReferencedRTPlanSequence[0].ReferencedFractionGroupSequence[0].ReferencedFractionGroupNumber = 0
         # Type 1C
-        if (ds.DoseSummationType == "BEAM" or
-            ds.DoseSummationType == "CONTROL_POINT"):
+        if (ds.DoseSummationType == "BEAM"):
+            referencedBeamSequence = dicom.dataset.Dataset()
+            referencedBeamSequence.ReferencedBeamNumber = beam_number
+            referencedBeamSequence.ReferencedFractionGroupNumber = 1
+            ds.ReferencedRTPlanSequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence = [referencedBeamSequence];
+
+        if (ds.DoseSummationType == "CONTROL_POINT"):
             ds.ReferencedRTPlanSequence[0].ReferencedFractionGroupSequence[0].ReferencedBeamSequence = [dicom.dataset.Dataset()]
             # ... and on it goes...
             raise NotImplementedError
@@ -461,7 +472,7 @@ def get_rt_dose_module(ds, rtplan=None):
 def get_rt_general_plan_module(ds, DT, TM, structure_set=None, dose=None):
     # Type 1
     ds.RTPlanLabel = "Plan"
-    if structure_set == None:
+    if structure_set is None:
         ds.RTPlanGeometry = "TREATMENT_DEVICE"
     else:
         ds.RTPlanGeometry = "PATIENT"
@@ -494,15 +505,15 @@ def get_rt_fraction_scheme_module(ds, nfractions):
     fg.FractionGroupDescription = "Primary fraction group" # T3
     # fg.ReferencedDoseSequence = [] # T3
     # fg.ReferencedDoseReferenceSequence = [] # T3
-    fg.NumberofFractionsPlanned = nfractions # T2
-    # fg.NumberofFractionPatternDigitsPerDay # T3
+    fg.NumberOfFractionsPlanned = nfractions # T2
+    # fg.NumberOfFractionPatternDigitsPerDay # T3
     # fg.RepeatFractionCycleLength # T3
     # fg.FractionPattern # T3
-    fg.NumberofBeams = len(ds.BeamSequence) # T1
+    fg.NumberOfBeams = len(ds.BeamSequence) # T1
     fg.ReferencedBeamSequence = []
     for beam in ds.BeamSequence:
         add_beam_to_rt_fraction_group(fg, beam)
-    fg.NumberofBrachyApplicationSetups = 0
+    fg.NumberOfBrachyApplicationSetups = 0
 
 
 def add_beam_to_rt_fraction_group(fg, beam, beam_meterset):
@@ -514,7 +525,7 @@ def add_beam_to_rt_fraction_group(fg, beam, beam_meterset):
     # refbeam.BeamDosePointEquivalentDepth # T3
     # refbeam.BeamDosePointSSD # T3
     refbeam.BeamMeterset = beam_meterset
-    fg.NumberofBeams += 1
+    fg.NumberOfBeams += 1
     fg.ReferencedBeamSequence.append(refbeam)
 
 
@@ -627,14 +638,14 @@ def do_for_all_cps(beam, patient_position, func, *args, **kwargs):
 def nmin(it):
     n = None
     for i in it:
-        if n == None or i < n:
+        if n is None or i < n:
             n = i
     return n
 
 def nmax(it):
     n = None
     for i in it:
-        if n == None or i > n:
+        if n is None or i > n:
             n = i
     return n
 
@@ -709,10 +720,10 @@ def conform_jaws_to_rectangle(beam, x, y, center):
 
 def finalize_mlc(beam):
     # Just close the leaves at 0. TODO: be more clever
-    for cp in beam.CPs:
-        if not hasattr(cp, 'BLDPositions'):
+    for cp in beam.ControlPointSequence:
+        if not hasattr(cp, 'BeamLimitingDevicePositionSequence'):
             continue
-        mlcs = [bld for bld in cp.BLDPositions if bld.RTBLDType == "MLCX" or bld.RTBLDType == "MLCY"]
+        mlcs = [bld for bld in cp.BeamLimitingDevicePositionSequence if bld.RTBeamLimitingDeviceType == "MLCX" or bld.RTBeamLimitingDeviceType == "MLCY"]
         if len(mlcs) != 1:
             continue
         mlc = mlcs[0]
@@ -807,7 +818,7 @@ def add_roi_to_structure_set(ds, ROIName, current_study):
     newroi = dicom.dataset.Dataset()
     roinumber = max([0] + [roi.ROINumber for roi in ds.StructureSetROISequence]) + 1
     newroi.ROIName = ROIName
-    newroi.ReferencedFrameofReferenceUID = get_current_study_uid('FrameofReferenceUID', current_study)
+    newroi.ReferencedFrameOfReferenceUID = get_current_study_uid('FrameOfReferenceUID', current_study)
     newroi.ROINumber = roinumber
     newroi.ROIGenerationAlgorithm = "SEMIAUTOMATIC"
     ds.StructureSetROISequence.append(newroi)
@@ -860,7 +871,7 @@ def add_roi_to_roi_contour(ds, roi, contours, ref_images):
                     c.ContourImageSequence.append(imgref)
         # c.ContourSlabThickness = "" # T3
         # c.ContourOffsetVector = [0,0,0] # T3
-        c.NumberofContourPoints = len(contour)
+        c.NumberOfContourPoints = len(contour)
         c.ContourData = "\\".join(["%g" % x for x in contour.ravel().tolist()])
     return newroi
 
@@ -893,7 +904,7 @@ def get_structure_set_module(ds, DT, TM, ref_images, current_study):
     ds.StructureSetTime = TM # T2
     if ref_images != None and len(ref_images) > 0:
         reffor = dicom.dataset.Dataset()
-        reffor.FrameofReferenceUID = get_current_study_uid('FrameofReferenceUID', current_study)
+        reffor.FrameOfReferenceUID = get_current_study_uid('FrameOfReferenceUID', current_study)
         refstudy = dicom.dataset.Dataset()
         refstudy.ReferencedSOPClassUID = get_uid("Detached Study Management SOP Class") # T1, but completely bogus.
         refstudy.ReferencedSOPInstanceUID = get_current_study_uid('StudyUID', current_study) # T1
@@ -932,11 +943,11 @@ def add_static_rt_beam(ds, nleaves, mlcdir, leafwidths, gantry_angle, collimator
     # beam.InstitutionName # T3
     # beam.InstitutionAddress # T3
     # beam.InstitutionalDepartmentName # T3
-    # beam.ManufacturersModelName # T3
+    # beam.ManufacturerModelName # T3
     # beam.DeviceSerialNumber # T3
     beam.PrimaryDosimeterUnit = "MU" # T3
     # beam.ReferencedToleranceTableNumber # T3
-    if sad == None:
+    if sad is None:
         beam.SourceAxisDistance = 1000 # mm, T3
     else:
         beam.SourceAxisDistance = sad # mm, T3
@@ -958,13 +969,13 @@ def add_static_rt_beam(ds, nleaves, mlcdir, leafwidths, gantry_angle, collimator
     # beam.PlannedVerificationImageSequence = []  # T3
     beam.TreatmentDeliveryType = "TREATMENT"
     # beam.ReferencedDoseSequence = [] # T3
-    beam.NumberofWedges = 0
-    # beam.WedgeSequence = [] # T1C on NumberofWedges != 0
-    beam.NumberofCompensators = 0
-    beam.NumberofBoli = 0
-    beam.NumberofBlocks = 0
+    beam.NumberOfWedges = 0
+    # beam.WedgeSequence = [] # T1C on NumberOfWedges != 0
+    beam.NumberOfCompensators = 0
+    beam.NumberOfBoli = 0
+    beam.NumberOfBlocks = 0
     beam.FinalCumulativeMetersetWeight = 100
-    beam.NumberofControlPoints = 2
+    beam.NumberOfControlPoints = 2
     beam.ControlPointSequence = [dicom.dataset.Dataset() for k in range(2)]
     for j in range(2):
         cp = beam.ControlPointSequence[j]
@@ -1033,7 +1044,7 @@ def get_rt_ion_beams_module(ds, nbeams, collimator_angles, patient_support_angle
         # beam.InstitutionName # T3
         # beam.InstitutionAddress # T3
         # beam.InstitutionalDepartmentName # T3
-        # beam.ManufacturersModelName # T3
+        # beam.ManufacturerModelName # T3
         # beam.DeviceSerialNumber # T3
         beam.PrimaryDosimeterUnit = "MU" # T3
         # beam.ReferencedToleranceTableNumber # T3
@@ -1044,27 +1055,27 @@ def get_rt_ion_beams_module(ds, nbeams, collimator_angles, patient_support_angle
         # beam.ReferencedReferenceImageSequence = []  # T3
         beam.TreatmentDeliveryType = "TREATMENT"
         # beam.ReferencedDoseSequence = [] # T3
-        beam.NumberofWedges = 0
+        beam.NumberOfWedges = 0
         # beam.TotalWedgeTrayWaterEquivalentThickness = 0 # T3
-        # beam.IonWedgeSequence = [] # T1C on NumberofWedges != 0
-        beam.NumberofCompensators = 0
+        # beam.IonWedgeSequence = [] # T1C on NumberOfWedges != 0
+        beam.NumberOfCompensators = 0
         # beam.TotalCompensatorTrayWaterEquivalentThickness = 0 # T3
-        # beam.IonRangeCompensatorSequence = [] # T1C on NumberofCompensators != 0
-        beam.NumberofBoli = 0
-        beam.NumberofBlocks = 0
+        # beam.IonRangeCompensatorSequence = [] # T1C on NumberOfCompensators != 0
+        beam.NumberOfBoli = 0
+        beam.NumberOfBlocks = 0
         # beam.SnoutSequence = [] # T3
         # beam.ApplicatorSequence = []
-        beam.NumberofRangeShifters = 0
-        # beam.RangeShifterSequence = [] # T1C on NumberofRangeShifters != 0
-        beam.NumberofLateralSpreadingDevices = 0 # 1 for SS, 2 for DS?
-        # beam.LateralSpreadingDeviceSequence = [] # T1C on beam.NumberofLateralSpreadingDevices != 0
-        beam.NumberofRangeModulators = 0
+        beam.NumberOfRangeShifters = 0
+        # beam.RangeShifterSequence = [] # T1C on NumberOfRangeShifters != 0
+        beam.NumberOfLateralSpreadingDevices = 0 # 1 for SS, 2 for DS?
+        # beam.LateralSpreadingDeviceSequence = [] # T1C on beam.NumberOfLateralSpreadingDevices != 0
+        beam.NumberOfRangeModulators = 0
         # beam.RangeModulatorSequence = []
         # TODO: Patient Support Identification Macro
         # beam.FixationLightAzimuthalAngle # T3
         # beam.FixationLightPolarAngle # T3
         beam.FinalCumulativeMetersetWeight = 100
-        beam.NumberofControlPoints = 2
+        beam.NumberOfControlPoints = 2
         beam.IonControlPointSequence = [dicom.dataset.Dataset() for k in range(2)]
         for j in range(2):
             cp = beam.IonControlPointSequence[j]
@@ -1075,10 +1086,10 @@ def get_rt_ion_beams_module(ds, nbeams, collimator_angles, patient_support_angle
             # cp.MetersetRate = 100 # T3
             if j == 0:
                 cp.NominalBeamEnergy = current_study['NominalEnergy'] # T1C in first cp or change
-                # cp.IonWedgePositionSequence = [] # T1C on beam.NumberofWedges != 0
-                # cp.RangeShifterSettingsSequence = [] # T1C on beam.NumberofRangeShifters != 0
-                # cp.LateralSpreadingDeviceSettingsSequence = [] # T1C on beam.NumberofLateralSpreadingDevices != 0
-                # cp.RangeModulatorSettingsSequence = [] # T1C on beam.NumberofRangeModulators != 0
+                # cp.IonWedgePositionSequence = [] # T1C on beam.NumberOfWedges != 0
+                # cp.RangeShifterSettingsSequence = [] # T1C on beam.NumberOfRangeShifters != 0
+                # cp.LateralSpreadingDeviceSettingsSequence = [] # T1C on beam.NumberOfLateralSpreadingDevices != 0
+                # cp.RangeModulatorSettingsSequence = [] # T1C on beam.NumberOfRangeModulators != 0
                 # TODO?: Beam Limiting Device Position Macro
                 cp.GantryAngle = gantryAngle
                 cp.GantryRotationDirection = 'NONE'
@@ -1088,11 +1099,11 @@ def get_rt_ion_beams_module(ds, nbeams, collimator_angles, patient_support_angle
                 cp.BeamLimitingDeviceAngle = collimator_angles[i]
                 cp.BeamLimitingDeviceRotationDirection = "NONE"
                 # cp.ScanSpotTuneID = "XYZ" # T1C on beam.ScanMode == "MODULATED"
-                # cp.NumberofScanSpotPositions = 0 # T1C on beam.ScanMode == "MODULATED"
+                # cp.NumberOfScanSpotPositions = 0 # T1C on beam.ScanMode == "MODULATED"
                 # cp.ScanSpotPositionMap = [] # T1C on beam.ScanMode == "MODULATED"
                 # cp.ScanSpotMetersetWeights = [] # T1C on beam.ScanMode == "MODULATED"
                 # cp.ScanningSpotSize = "" # T3
-                # cp.NumberofPaintings = 0 # T1C on beam.ScanMode == "MODULATED"
+                # cp.NumberOfPaintings = 0 # T1C on beam.ScanMode == "MODULATED"
                 cp.PatientSupportAngle = patient_support_angles[i]
                 cp.PatientSupportRotationDirection = "NONE"
                 cp.TableTopPitchAngle = table_top.psi_t
@@ -1110,30 +1121,30 @@ def get_rt_ion_beams_module(ds, nbeams, collimator_angles, patient_support_angle
 
 
 def build_rt_plan(current_study, isocenter, structure_set=None, **kwargs):
-    FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
+    FoRuid = get_current_study_uid('FrameOfReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
     rp = get_default_rt_plan_dataset(current_study, isocenter, structure_set)
     rp.SeriesInstanceUID = seriesuid
     rp.StudyInstanceUID = studyuid
-    rp.FrameofReferenceUID = FoRuid
+    rp.FrameOfReferenceUID = FoRuid
     for k, v in kwargs.iteritems():
         if v != None:
             setattr(rp, k, v)
     return rp
 
-def build_rt_dose(dose_data, voxel_size, center, current_study, rtplan, dose_grid_scaling, **kwargs):
+def build_rt_dose(dose_data, voxel_size, center, current_study, rtplan, dose_grid_scaling, dose_summation_type, beam_number, **kwargs):
     nVoxels = dose_data.shape
-    FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
+    FoRuid = get_current_study_uid('FrameOfReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
-    rd = get_default_rt_dose_dataset(current_study, rtplan)
+    rd = get_default_rt_dose_dataset(current_study, rtplan, dose_summation_type, beam_number)
     rd.SeriesInstanceUID = seriesuid
     rd.StudyInstanceUID = studyuid
-    rd.FrameofReferenceUID = FoRuid
+    rd.FrameOfReferenceUID = FoRuid
     rd.Rows = nVoxels[1]
     rd.Columns = nVoxels[0]
-    rd.NumberofFrames = nVoxels[2]
+    rd.NumberOfFrames = nVoxels[2]
     rd.PixelSpacing = [voxel_size[1], voxel_size[0]]
     rd.SliceThickness = voxel_size[2]
     rd.GridFrameOffsetVector = [z*voxel_size[2] for z in range(nVoxels[2])]
@@ -1164,7 +1175,7 @@ def build_rt_structure_set(ref_images, current_study, **kwargs):
 def build_ct(ct_data, pixel_representation, rescale_slope, rescale_intercept, voxel_size, center, current_study, **kwargs):
     nVoxels = ct_data.shape
     ctbaseuid = generate_uid()
-    FoRuid = get_current_study_uid('FrameofReferenceUID', current_study)
+    FoRuid = get_current_study_uid('FrameOfReferenceUID', current_study)
     studyuid = get_current_study_uid('StudyUID', current_study)
     seriesuid = generate_uid()
     cts = []
@@ -1178,7 +1189,7 @@ def build_ct(ct_data, pixel_representation, rescale_slope, rescale_intercept, vo
             rescale_intercept=rescale_intercept)
         ct.SeriesInstanceUID = seriesuid
         ct.StudyInstanceUID = studyuid
-        ct.FrameofReferenceUID = FoRuid
+        ct.FrameOfReferenceUID = FoRuid
         ct.Rows = nVoxels[1]
         ct.Columns = nVoxels[0]
         ct.PixelSpacing = [voxel_size[1], voxel_size[0]]
@@ -1199,7 +1210,7 @@ def build_ct(ct_data, pixel_representation, rescale_slope, rescale_intercept, vo
 def build_mr(mr_data, pixel_representation, voxel_size, center, current_study, **kwargs):
     voxel_count = mr_data.shape
     mr_base_uid = generate_uid()
-    for_uid = get_current_study_uid('FrameofReferenceUID', current_study)
+    for_uid = get_current_study_uid('FrameOfReferenceUID', current_study)
     study_uid = get_current_study_uid('StudyUID', current_study)
     series_uid = generate_uid()
     mrs = []
@@ -1211,7 +1222,7 @@ def build_mr(mr_data, pixel_representation, voxel_size, center, current_study, *
             pixel_representation)
         mr.SeriesInstanceUID = series_uid
         mr.StudyInstanceUID = study_uid
-        mr.FrameofReferenceUID = for_uid
+        mr.FrameOfReferenceUID = for_uid
         mr.Rows = voxel_count[1]
         mr.Columns = voxel_count[0]
         mr.PixelSpacing = [voxel_size[1], voxel_size[0]]
@@ -1234,7 +1245,7 @@ def build_mr(mr_data, pixel_representation, voxel_size, center, current_study, *
 def build_pt(pt_data, pixel_representation, rescale_slope, voxel_size, center, current_study, **kwargs):
     voxel_count = pt_data.shape
     pt_base_uid = generate_uid()
-    for_uid = get_current_study_uid('FrameofReferenceUID', current_study)
+    for_uid = get_current_study_uid('FrameOfReferenceUID', current_study)
     study_uid = get_current_study_uid('StudyUID', current_study)
     series_uid = generate_uid()
     pts = []
@@ -1249,7 +1260,7 @@ def build_pt(pt_data, pixel_representation, rescale_slope, voxel_size, center, c
             rescale_slope=rescale_slope)
         pt.SeriesInstanceUID = series_uid
         pt.StudyInstanceUID = study_uid
-        pt.FrameofReferenceUID = for_uid
+        pt.FrameOfReferenceUID = for_uid
         pt.Rows = voxel_count[1]
         pt.Columns = voxel_count[0]
         pt.PixelSpacing = [voxel_size[1], voxel_size[0]]
