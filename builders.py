@@ -79,6 +79,21 @@ class ImageBuilder(object):
         else:
             assert 'unknown mode'
 
+    def add_cylinder(self, radius, hight, center, stored_value = None, real_value = None, mode = 'set'):
+        if real_value != None:
+            assert stored_value == None
+            stored_value = self.real_value_to_stored_value(real_value)
+        x,y,z = self.mgrid()
+        voxels = (x-center[0])**2 + (y-center[1])**2 <= radius**2 * (abs(z-center[2]) <= hight/2.0)
+        if mode == 'set':
+            self.pixel_array[voxels] = stored_value
+        elif mode == 'add':
+            self.pixel_array[voxels] += stored_value
+        elif mode == 'subtract':
+            self.pixel_array[voxels] -= stored_value
+        else:
+            assert 'unknown mode'
+
 class StudyBuilder(object):
     def __init__(self, patient_position="HFS", patient_id="", patient_name="", patient_birthdate=""):
         self.modalityorder = ["CT", "MR", "PT", "RTSTRUCT", "RTPLAN", "RTDOSE"]
