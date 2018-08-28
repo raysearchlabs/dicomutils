@@ -2,7 +2,13 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import dicom
+
+# Prevent issues when using pydicom >1.0 and maintain backwards compatible, see #6
+try:
+    import dicom
+except ImportError:
+    import pydicom as dicom
+
 import time
 import uuid
 import sys
